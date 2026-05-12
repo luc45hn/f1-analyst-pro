@@ -143,7 +143,7 @@ class F1Database:
             
             results_to_insert["session_id"] = session_id
             try:
-                results_to_insert.to_sql("results", conn, if_exists="replace", index=False)
+                results_to_insert.to_sql("results", conn, if_exists="append", index=False)
                 conn.commit()
             except sqlite3.Error as e:
                 raise RuntimeError(f"Error al guardar resultados (session_id={session_id}): {e}") from e

@@ -74,12 +74,22 @@ class F1ConsultantAgent:
 
         # --- SPRINT ---
         if wants_sprint or load_all:
-            for stype, label in [("SQ", "SPRINT QUALIFYING"), ("SS", "SPRINT")]:
-                sid = self.db.get_session_id(year, gp_name, stype)
-                if sid:
-                    s_laps = self.db.get_laps_data(sid).dropna(subset=["lap_time"])
-                    top_s  = s_laps.nsmallest(10, "lap_time").to_dict("records")
-                    context_str += f"--- TOP 10 VUELTAS {label} ---\n" + str(top_s) + "\n\n"
+            ss_id = self.db.get_session_id(year, gp_name, "SS")
+            if ss_id:
+                ss_results = self.db.get_results_data(ss_id)
+                if not ss_results.empty:
+                    context_str += "--- CLASIFICACIÓN FINAL SPRINT RACE (SS) ---\n" + ss_results.head(20).to_dict("records").__str__() + "\n\n"
+                ss_laps = self.db.get_laps_data(ss_id).dropna(subset=["lap_time"])
+                top_ss = ss_laps.nsmallest(10, "lap_time").to_dict("records")
+                if top_ss:
+                    context_str += "--- TOP 10 VUELTAS SPRINT RACE (SS) ---\n" + str(top_ss) + "\n\n"
+
+            sq_id = self.db.get_session_id(year, gp_name, "SQ")
+            if sq_id:
+                sq_laps = self.db.get_laps_data(sq_id).dropna(subset=["lap_time"])
+                top_sq = sq_laps.nsmallest(10, "lap_time").to_dict("records")
+                if top_sq:
+                    context_str += "--- TOP 10 VUELTAS SPRINT QUALIFYING (SQ) ---\n" + str(top_sq) + "\n\n"
 
         system_prompt = (
             "Eres un analista técnico de Fórmula 1 de élite. "
