@@ -1,8 +1,10 @@
 import streamlit as st
 from core.consultant_agent import F1ConsultantAgent
 from core.database_manager import F1Database
-from core.weekend_detector import detect_weekend_type, ensure_sessions_loaded
-from core.config import YEAR, PREDEFINED_ANALYSES, normalize_gp_name
+from core.weekend_detector import detect_weekend_type, ensure_sessions_loaded, get_session_display_names
+from core.config import PREDEFINED_ANALYSES
+from core.gp_resolver import parse_gp_input, DEFAULT_YEAR
+
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -19,6 +21,8 @@ for key, default in [
     ("agent", None),
     ("pending_prompt", None),
     ("load_status", None),
+    ("sessions_available", []),
+    ("year", DEFAULT_YEAR),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -26,26 +30,29 @@ for key, default in [
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.title("🏎️ F1 Analyst Pro")
-    st.caption(f"Temporada {YEAR}")
+    st.caption(f"Temporada {st.session_state.year}")
     st.divider()
 
     gp_input = st.text_input("Gran Premio", placeholder="ej: Miami, Monaco, Australia...")
     load_btn = st.button("Cargar GP", type="primary", use_container_width=True)
 
     if load_btn and gp_input.strip():
-        gp_name = normalize_gp_name(gp_input)
+        gp_name, year = parse_gp_input(gp_input)
         db = F1Database()
         with st.spinner("⏳ Descargando telemetría..."):
-            ok = ensure_sessions_loaded(gp_name, db)
+            ok = ensure_sessions_loaded(gp_name, db, year)
         if ok:
             st.session_state.gp_loaded = gp_name
+            st.session_state.year = year
             st.session_state.weekend_type = detect_weekend_type(gp_name)
             st.session_state.agent = F1ConsultantAgent()
             st.session_state.messages = []
             st.session_state.load_status = "ok"
+            st.session_state.sessions_available = get_session_display_names(gp_name)
         else:
             st.session_state.load_status = "error"
             st.session_state.gp_loaded = None
+            st.session_state.year = DEFAULT_YEAR
 
     if st.session_state.load_status == "error":
         st.error("❌ No se pudo cargar el GP. Verificá el nombre.")
@@ -58,13 +65,22 @@ with st.sidebar:
         st.divider()
 
         st.markdown("**Análisis rápidos**")
-        for analysis in PREDEFINED_ANALYSES:
+        analyses = list(PREDEFINED_ANALYSES)
+        if st.session_state.weekend_type == "sprint":
+            analyses += ["Análisis Sprint Race", "Comparativa SQ vs Q (ritmo una vuelta)"]
+        for analysis in analyses:
             if st.button(analysis, use_container_width=True, key=f"btn_{analysis}"):
                 st.session_state.pending_prompt = analysis
                 st.rerun()
 
 # ── Main area ─────────────────────────────────────────────────────────────────
 st.markdown("## Consultor Técnico F1")
+
+if st.session_state.gp_loaded:
+    wtype = st.session_state.weekend_type
+    label = "SPRINT 🏃" if wtype == "sprint" else "NORMAL 📅"
+    sessions_str = " · ".join(name for _, name in st.session_state.sessions_available)
+    st.info(f"🏁 Fin de semana **{label}** — Sesiones disponibles: {sessions_str}")
 
 if not st.session_state.gp_loaded:
     st.info("👈 Ingresá el nombre de un Gran Premio en el panel izquierdo para comenzar.")
@@ -96,6 +112,7 @@ if prompt_to_send:
                 result = st.session_state.agent.send_message(
                     prompt_to_send,
                     st.session_state.gp_loaded,
+                    st.session_state.year,
                 )
             st.markdown(result["text"])
             if result["chart"] is not None:

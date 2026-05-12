@@ -4,6 +4,10 @@ import pandas as pd
 from core.config import CACHE_DIR, YEAR
 from core.database_manager import F1Database
 
+_FASTF1_SESSION_MAP = {
+    "SS": "Sprint",
+}
+
 def get_session_data(year, gp_name, session_type="R"):
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     fastf1.Cache.enable_cache(str(CACHE_DIR))
@@ -13,9 +17,17 @@ def get_session_data(year, gp_name, session_type="R"):
 
     print("Downloading official FIA telemetry...")
     try:
-        session = fastf1.get_session(year, gp_name, session_type)
+        ff1_identifier = _FASTF1_SESSION_MAP.get(session_type, session_type)
+        session = fastf1.get_session(year, gp_name, ff1_identifier)
         print("Loading session data (telemetry, weather, messages)...")
         session.load(telemetry=True, weather=True, messages=False)
+
+        actual_year = session.event["EventDate"].year
+        if actual_year != year:
+            raise ValueError(
+                f"No se encontraron datos para {gp_name} {year}. "
+                f"FastF1 devolvió el evento de {actual_year}."
+            )
 
         print("Generando resumen técnico para el análisis...")
         results_data = session.results.to_dict("records")
@@ -66,6 +78,16 @@ def get_session_data(year, gp_name, session_type="R"):
             qualy_results_df["session_id"] = session_id
             db.insert_qualy_results_data(session_id, qualy_results_df)
             print(f"[INFO] {len(qualy_results_df)} qualifying results saved for {year} {gp_name} {session_type}.")
+        elif session_type == "SS" and results_data:
+            results_df = pd.DataFrame(results_data)
+            results_df["session_id"] = session_id
+            db.insert_results_data(session_id, results_df)
+            print(f"[INFO] {len(results_df)} sprint race results saved for {year} {gp_name} {session_type}.")
+        elif session_type == "SQ" and results_data:
+            qualy_results_df = pd.DataFrame(results_data)
+            qualy_results_df["session_id"] = session_id
+            db.insert_qualy_results_data(session_id, qualy_results_df)
+            print(f"[INFO] {len(qualy_results_df)} sprint qualifying results saved for {year} {gp_name} {session_type}.")
 
         try:
             weather_data = session.weather_data.iloc[0]

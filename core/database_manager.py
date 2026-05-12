@@ -61,6 +61,12 @@ class F1Database:
                 )
             """)
             conn.commit()
+            # Migración: agregar stint si la tabla laps ya existía sin esa columna
+            cursor.execute("PRAGMA table_info(laps)")
+            existing_cols = {row[1] for row in cursor.fetchall()}
+            if "stint" not in existing_cols:
+                cursor.execute("ALTER TABLE laps ADD COLUMN stint INTEGER")
+                conn.commit()
             # Also create a table for qualification results (Q1, Q2, Q3)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS qualy_results (
@@ -195,7 +201,13 @@ class F1Database:
             return pd.read_sql_query(f"SELECT * FROM qualy_results WHERE session_id = {session_id} ORDER BY position ASC", conn)
 
     def session_exists(self, year, event_name, session_type):
-        return self.get_session_id(year, event_name, session_type) is not None
+        sid = self.get_session_id(year, event_name, session_type)
+        if sid is None:
+            return False
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM laps WHERE session_id = ?", (sid,))
+            return cursor.fetchone()[0] > 0
 
     def get_all_sessions(self):
         with sqlite3.connect(self.db_path) as conn:

@@ -1,7 +1,10 @@
 import re
+import time
 import anthropic
 import os
-from core.config import YEAR, ANTHROPIC_MODEL, ANTHROPIC_MAX_TOKENS
+from anthropic import APIStatusError
+from core.config import ANTHROPIC_MODEL, ANTHROPIC_MAX_TOKENS
+from core.gp_resolver import DEFAULT_YEAR
 from core.database_manager import F1Database
 from core.chart_builder import (
     plot_lap_times, plot_sector_comparison,
@@ -13,7 +16,7 @@ class F1ConsultantAgent:
         self.client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         self.db = F1Database()
 
-    def send_message(self, prompt, gp_name):
+    def send_message(self, prompt, gp_name, year: int = DEFAULT_YEAR):
         prompt_lower = prompt.lower()
 
         wants_qualy  = any(w in prompt_lower for w in ["clasif", "qualy", "pole", "q1", "q2", "q3", "grid"])
@@ -22,32 +25,32 @@ class F1ConsultantAgent:
         wants_sprint = any(w in prompt_lower for w in ["sprint", "sq", "ss"])
         load_all = not (wants_qualy or wants_race or wants_sprint)
 
-        context_str = f"Gran Premio: {gp_name} — Temporada {YEAR}\n\n"
+        context_str = f"Gran Premio: {gp_name} — Temporada {year}\n\n"
 
         # --- CLASIFICACIÓN ---
         if wants_qualy or load_all:
-            qualy_id = self.db.get_session_id(YEAR, gp_name, "Q")
+            qualy_id = self.db.get_session_id(year, gp_name, "Q")
             if qualy_id:
                 _q_df    = self.db.get_laps_data(qualy_id)
                 _q_clean = _q_df.dropna(subset=["lap_time"])
                 best_q   = _q_clean.loc[_q_clean.groupby("driver")["lap_time"].idxmin()].to_dict("records")
                 q_results = self.db.get_qualy_results_data(qualy_id).to_dict("records")
                 if best_q:
-                    context_str += "--- MEJOR VUELTA POR PILOTO EN CLASIFICACIÓN ---\n" + str(best_q) + "\n\n"
+                    context_str += "--- MEJOR VUELTA POR PILOTO EN QUALIFYING (Q) ---\n" + str(best_q) + "\n\n"
                 if q_results:
-                    context_str += "--- RESULTADOS DE CLASIFICACIÓN (Q1/Q2/Q3) ---\n" + str(q_results) + "\n\n"
+                    context_str += "--- RESULTADOS DE QUALIFYING — Q1 / Q2 / Q3 ---\n" + str(q_results) + "\n\n"
             else:
                 context_str += "ERROR: No hay datos de clasificación en la DB para este GP\n\n"
 
         # --- CARRERA ---
         if wants_race or load_all:
-            race_id = self.db.get_session_id(YEAR, gp_name, "R")
+            race_id = self.db.get_session_id(year, gp_name, "R")
             if race_id:
                 all_laps   = self.db.get_laps_data(race_id)
                 results_df = self.db.get_results_data(race_id)
                 if not results_df.empty:
                     top20 = results_df.head(20).to_dict("records")
-                    context_str += "--- CLASIFICACIÓN FINAL ---\n" + str(top20) + "\n\n"
+                    context_str += "--- CLASIFICACIÓN FINAL DE CARRERA (R) ---\n" + str(top20) + "\n\n"
                     best_per_driver = []
                     for row in top20:
                         drv = row["driver"]
@@ -55,7 +58,7 @@ class F1ConsultantAgent:
                         if not bl.empty:
                             best_per_driver.append(bl.iloc[0].to_dict())
                     if best_per_driver:
-                        context_str += "--- MEJOR VUELTA POR PILOTO ---\n" + str(best_per_driver) + "\n\n"
+                        context_str += "--- MEJOR VUELTA POR PILOTO EN CARRERA (R) ---\n" + str(best_per_driver) + "\n\n"
                 race_laps_clean = all_laps.dropna(subset=["lap_time"])
                 race_data = (
                     race_laps_clean
@@ -65,14 +68,14 @@ class F1ConsultantAgent:
                     .to_dict("records")
                 )
                 if race_data:
-                    context_str += "--- TOP 10 VUELTAS POR PILOTO ---\n" + str(race_data) + "\n\n"
+                    context_str += "--- TOP 10 VUELTAS EN CARRERA (R) POR PILOTO ---\n" + str(race_data) + "\n\n"
             else:
                 context_str += "ERROR: No hay datos de carrera en la DB para este GP\n\n"
 
         # --- SPRINT ---
         if wants_sprint or load_all:
             for stype, label in [("SQ", "SPRINT QUALIFYING"), ("SS", "SPRINT")]:
-                sid = self.db.get_session_id(YEAR, gp_name, stype)
+                sid = self.db.get_session_id(year, gp_name, stype)
                 if sid:
                     s_laps = self.db.get_laps_data(sid).dropna(subset=["lap_time"])
                     top_s  = s_laps.nsmallest(10, "lap_time").to_dict("records")
@@ -82,25 +85,35 @@ class F1ConsultantAgent:
             "Eres un analista técnico de Fórmula 1 de élite. "
             "Respondes siempre en español con precisión técnica, usando tablas Markdown para datos tabulares "
             "y bloques de cita (>) para conclusiones analíticas. "
-            "Destacas con negritas los datos clave. Eres conciso pero riguroso."
+            "Destacas con negritas los datos clave. Eres conciso pero riguroso. "
+            "Cuando cites datos de una sesión específica, indicá siempre su nombre completo "
+            "(ej: Qualifying (Q), Sprint Race (SS), Sprint Qualifying (SQ), Race (R))."
         )
 
-        response = self.client.messages.create(
-            model=ANTHROPIC_MODEL,
-            max_tokens=ANTHROPIC_MAX_TOKENS,
-            system=system_prompt,
-            messages=[{"role": "user", "content": f"Contexto de datos:\n{context_str}\n\nPregunta: {prompt}"}]
-        )
+        for attempt in range(3):
+            try:
+                response = self.client.messages.create(
+                    model=ANTHROPIC_MODEL,
+                    max_tokens=ANTHROPIC_MAX_TOKENS,
+                    system=system_prompt,
+                    messages=[{"role": "user", "content": f"Contexto de datos:\n{context_str}\n\nPregunta: {prompt}"}]
+                )
+                break
+            except APIStatusError as e:
+                if e.status_code == 529 and attempt < 2:
+                    time.sleep(5 * (attempt + 1))
+                else:
+                    raise
         text = response.content[0].text
         try:
-            chart = self._build_chart(prompt_lower, gp_name)
+            chart = self._build_chart(prompt_lower, gp_name, year)
         except Exception:
             chart = None
         return {"text": text, "chart": chart}
 
-    def _build_chart(self, prompt_lower: str, gp_name: str):
-        race_id  = self.db.get_session_id(YEAR, gp_name, "R")
-        qualy_id = self.db.get_session_id(YEAR, gp_name, "Q")
+    def _build_chart(self, prompt_lower: str, gp_name: str, year: int):
+        race_id  = self.db.get_session_id(year, gp_name, "R")
+        qualy_id = self.db.get_session_id(year, gp_name, "Q")
 
         wants_lap_times = any(w in prompt_lower for w in ["tiempos de vuelta", "lap time", "ritmo de vuelta"])
         wants_sectors   = any(w in prompt_lower for w in ["sector", "sectores"])

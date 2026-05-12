@@ -1,5 +1,5 @@
 import fastf1
-from core.config import CACHE_DIR, YEAR, SPRINT_WEEKENDS
+from core.config import CACHE_DIR, SPRINT_WEEKENDS
 from core.data_extractor import get_session_data
 
 def detect_weekend_type(gp_name: str) -> str:
@@ -22,16 +22,33 @@ def _static_sessions(gp_name: str) -> list[str]:
         return ["FP1", "SQ", "SS", "Q", "R"]
     return ["FP1", "FP2", "FP3", "Q", "R"]
 
-def ensure_sessions_loaded(gp_name: str, db) -> bool:
-    """Verifica que Q y R estén en la DB; descarga los que falten."""
+_SESSION_LABELS: dict[str, str] = {
+    "FP1": "Practice 1 (FP1)",
+    "FP2": "Free Practice 2 (FP2)",
+    "FP3": "Free Practice 3 (FP3)",
+    "SQ":  "Sprint Qualifying (SQ)",
+    "SS":  "Sprint Race (SS)",
+    "Q":   "Qualifying (Q)",
+    "R":   "Race (R)",
+}
+
+def get_session_display_names(gp_name: str) -> list[tuple[str, str]]:
+    """Retorna [(código, nombre_completo), ...] para el tipo de fin de semana."""
+    codes = _static_sessions(gp_name)
+    return [(c, _SESSION_LABELS.get(c, c)) for c in codes]
+
+_INGESTABLE = {"Q", "R", "SQ", "SS"}
+
+def ensure_sessions_loaded(gp_name: str, db, year: int = 2026) -> bool:
+    """Verifica que las sesiones con datos en DB estén cargadas; descarga los que falten."""
     any_loaded = False
-    for stype in ["Q", "R"]:
-        if db.session_exists(YEAR, gp_name, stype):
+    for stype in [s for s in _static_sessions(gp_name) if s in _INGESTABLE]:
+        if db.session_exists(year, gp_name, stype):
             any_loaded = True
         else:
-            result = get_session_data(YEAR, gp_name, session_type=stype)
+            result = get_session_data(year, gp_name, session_type=stype)
             if result:
                 any_loaded = True
             else:
-                print(f"[WARN] No se pudo cargar {stype} para {gp_name}.")
+                print(f"[WARN] No se pudo cargar {stype} para {gp_name} {year}.")
     return any_loaded
