@@ -1,0 +1,7 @@
+fastf1
+pandas
+matplotlib
+anthropic
+python-dotenv
+streamlit
+plotly

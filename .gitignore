@@ -1,0 +1,32 @@
+# Credenciales
+.env
+
+# Entorno virtual
+venv/
+.venv/
+
+# Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyo
+
+# Base de datos SQLite
+data/*.db
+
+# Caché FastF1 (archivos de telemetría crudos, pueden ser GBs)
+data/raw/
+
+# Caché procesada (JSONs generados automáticamente)
+data/processed/
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# IDEs
+.vscode/
+.idea/
+
+# Claude Code
+.claude/
