@@ -90,6 +90,8 @@ if not st.session_state.gp_loaded:
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
+        if msg["role"] == "assistant" and msg.get("chart") is not None:
+            st.plotly_chart(msg["chart"], use_container_width=True)
 
 # Resolve prompt source (sidebar button or chat input)
 prompt_to_send = None
@@ -117,7 +119,7 @@ if prompt_to_send:
             st.markdown(result["text"])
             if result["chart"] is not None:
                 st.plotly_chart(result["chart"], use_container_width=True)
-            st.session_state.messages.append({"role": "assistant", "content": result["text"]})
+            st.session_state.messages.append({"role": "assistant", "content": result["text"], "chart": result["chart"]})
         except Exception as e:
             error_msg = f"Error al procesar la consulta: {e}"
             st.error(error_msg)
