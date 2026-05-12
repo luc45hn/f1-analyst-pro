@@ -19,10 +19,12 @@ class F1ConsultantAgent:
     def send_message(self, prompt, gp_name, year: int = DEFAULT_YEAR):
         prompt_lower = prompt.lower()
 
-        wants_qualy  = any(w in prompt_lower for w in ["clasif", "qualy", "pole", "q1", "q2", "q3", "grid"])
+        wants_qualy  = any(w in prompt_lower for w in ["clasif", "qualy", "qualifying", "pole", "q1", "q2", "q3", "grid"])
         wants_race   = any(w in prompt_lower for w in ["carrera", "race", "vuelta", "ritmo", "neumático",
                                                         "stint", "pit", "parada", "degradación", "top"])
         wants_sprint = any(w in prompt_lower for w in ["sprint", "sq", "ss"])
+        if wants_sprint and "sq" in prompt_lower:
+            wants_qualy = True
         load_all = not (wants_qualy or wants_race or wants_sprint)
 
         context_str = f"Gran Premio: {gp_name} — Temporada {year}\n\n"
@@ -49,7 +51,7 @@ class F1ConsultantAgent:
                 all_laps   = self.db.get_laps_data(race_id)
                 results_df = self.db.get_results_data(race_id)
                 if not results_df.empty:
-                    top20 = results_df.head(20).to_dict("records")
+                    top20 = results_df.head(22).to_dict("records")
                     context_str += "--- CLASIFICACIÓN FINAL DE CARRERA (R) ---\n" + str(top20) + "\n\n"
                     best_per_driver = []
                     for row in top20:
@@ -78,7 +80,7 @@ class F1ConsultantAgent:
             if ss_id:
                 ss_results = self.db.get_results_data(ss_id)
                 if not ss_results.empty:
-                    context_str += "--- CLASIFICACIÓN FINAL SPRINT RACE (SS) ---\n" + ss_results.head(20).to_dict("records").__str__() + "\n\n"
+                    context_str += "--- CLASIFICACIÓN FINAL SPRINT RACE (SS) ---\n" + ss_results.head(22).to_dict("records").__str__() + "\n\n"
                 ss_laps = self.db.get_laps_data(ss_id).dropna(subset=["lap_time"])
                 top_ss = ss_laps.nsmallest(10, "lap_time").to_dict("records")
                 if top_ss:
@@ -90,6 +92,14 @@ class F1ConsultantAgent:
                 top_sq = sq_laps.nsmallest(10, "lap_time").to_dict("records")
                 if top_sq:
                     context_str += "--- TOP 10 VUELTAS SPRINT QUALIFYING (SQ) ---\n" + str(top_sq) + "\n\n"
+
+        # --- ALINEACIÓN ---
+        lineup_sid = (self.db.get_session_id(year, gp_name, "R")
+                      or self.db.get_session_id(year, gp_name, "SS"))
+        if lineup_sid:
+            lineups = self.db.get_team_lineups(lineup_sid)
+            if lineups:
+                context_str += "--- ALINEACIÓN DE EQUIPOS (fuente: datos de carrera) ---\n" + str(lineups) + "\n\n"
 
         system_prompt = (
             "Eres un analista técnico de Fórmula 1 de élite. "

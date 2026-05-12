@@ -34,6 +34,7 @@ class F1Database:
                     stint INTEGER,
                     is_pit_in BOOLEAN,
                     is_pit_out BOOLEAN,
+                    track_status TEXT,
                     session_type TEXT NOT NULL,
                     PRIMARY KEY (session_id, driver, lap_number),
                     FOREIGN KEY (session_id) REFERENCES sessions(id)
@@ -54,8 +55,9 @@ class F1Database:
                     position INTEGER,
                     driver TEXT,
                     team TEXT,
-                    time TEXT, 
+                    time TEXT,
                     points REAL,
+                    status TEXT,
                     PRIMARY KEY (session_id, position),
                     FOREIGN KEY (session_id) REFERENCES sessions(id)
                 )
@@ -66,6 +68,14 @@ class F1Database:
             existing_cols = {row[1] for row in cursor.fetchall()}
             if "stint" not in existing_cols:
                 cursor.execute("ALTER TABLE laps ADD COLUMN stint INTEGER")
+                conn.commit()
+            if "track_status" not in existing_cols:
+                cursor.execute("ALTER TABLE laps ADD COLUMN track_status TEXT")
+                conn.commit()
+            cursor.execute("PRAGMA table_info(results)")
+            results_cols = {row[1] for row in cursor.fetchall()}
+            if "status" not in results_cols:
+                cursor.execute("ALTER TABLE results ADD COLUMN status TEXT")
                 conn.commit()
             # Also create a table for qualification results (Q1, Q2, Q3)
             cursor.execute("""
@@ -124,19 +134,19 @@ class F1Database:
                 "Abbreviation": "driver",
                 "TeamName": "team",
                 "Time": "time",
-                "Points": "points"
+                "Points": "points",
+                "Status": "status",
             })
             # Convert timedelta objects to string for database storage
             if "time" in results_to_insert.columns:
                 results_to_insert["time"] = results_to_insert["time"].apply(lambda x: str(x) if pd.notna(x) else None)
 
             # Ensure only columns defined in the schema are inserted and handle potential missing columns gracefully
-            required_columns = ["position", "driver", "team", "time", "points"]
+            required_columns = ["position", "driver", "team", "time", "points", "status"]
             for col in required_columns:
                 if col not in results_to_insert.columns:
-                    # For TEXT columns, use empty string, for REAL/INTEGER use None
-                    if col in ["driver", "team", "time"]:
-                        results_to_insert[col] = ""
+                    if col in ["driver", "team", "time", "status"]:
+                        results_to_insert[col] = None
                     else:
                         results_to_insert[col] = None 
             results_to_insert = results_to_insert[required_columns]
@@ -199,6 +209,18 @@ class F1Database:
     def get_qualy_results_data(self, session_id):
         with sqlite3.connect(self.db_path) as conn:
             return pd.read_sql_query(f"SELECT * FROM qualy_results WHERE session_id = {session_id} ORDER BY position ASC", conn)
+
+    def get_team_lineups(self, session_id) -> dict[str, list[str]]:
+        with sqlite3.connect(self.db_path) as conn:
+            df = pd.read_sql_query(
+                "SELECT team, driver FROM results WHERE session_id = ? ORDER BY position ASC",
+                conn, params=(session_id,)
+            )
+        lineups: dict[str, list[str]] = {}
+        for _, row in df.iterrows():
+            if row["team"] and row["driver"]:
+                lineups.setdefault(row["team"], []).append(row["driver"])
+        return lineups
 
     def session_exists(self, year, event_name, session_type):
         sid = self.get_session_id(year, event_name, session_type)

@@ -1,7 +1,7 @@
 import fastf1
 import traceback
 import pandas as pd
-from core.config import CACHE_DIR, YEAR
+from core.config import CACHE_DIR
 from core.database_manager import F1Database
 
 _FASTF1_SESSION_MAP = {
@@ -53,6 +53,7 @@ def get_session_data(year, gp_name, session_type="R"):
                         "stint":        int(lap["Stint"]) if pd.notna(lap["Stint"]) else None,
                         "is_pit_in":    pd.notna(lap["PitInTime"]),
                         "is_pit_out":   pd.notna(lap["PitOutTime"]),
+                        "track_status": str(lap["TrackStatus"]) if pd.notna(lap["TrackStatus"]) else None,
                         "session_type": session_type,
                     })
 
