@@ -222,6 +222,69 @@ class F1Database:
                 lineups.setdefault(row["team"], []).append(row["driver"])
         return lineups
 
+    def get_best_lap_per_driver(self, session_id):
+        with sqlite3.connect(self.db_path) as conn:
+            return pd.read_sql_query(
+                """SELECT l.driver, l.lap_number, l.lap_time, l.s1, l.s2, l.s3,
+                          l.compound, l.tyre_life, l.stint, l.is_pit_in, l.is_pit_out, l.track_status
+                   FROM laps l
+                   JOIN (
+                       SELECT driver, MIN(lap_time) AS min_lap
+                       FROM laps WHERE session_id = ? AND lap_time IS NOT NULL
+                       GROUP BY driver
+                   ) agg ON l.driver = agg.driver AND l.lap_time = agg.min_lap
+                   WHERE l.session_id = ?
+                   ORDER BY l.lap_time ASC""",
+                conn, params=(session_id, session_id)
+            )
+
+    def get_stint_summary(self, session_id):
+        with sqlite3.connect(self.db_path) as conn:
+            return pd.read_sql_query(
+                """SELECT driver, compound, stint,
+                          COUNT(*)                                              AS total_laps,
+                          MIN(lap_time)                                         AS best_lap,
+                          AVG(CASE WHEN track_status = '1' THEN lap_time END)  AS avg_pace,
+                          MIN(tyre_life)                                        AS tyre_life_start,
+                          MAX(tyre_life)                                        AS tyre_life_end,
+                          MAX(CASE WHEN track_status IS NOT NULL
+                                    AND track_status != '1' THEN 1 ELSE 0
+                               END)                                             AS has_sc
+                   FROM laps
+                   WHERE session_id = ? AND lap_time IS NOT NULL
+                   GROUP BY driver, compound, stint
+                   ORDER BY driver, stint ASC""",
+                conn, params=(session_id,)
+            )
+
+    def get_top_laps_per_driver(self, session_id, limit=10):
+        with sqlite3.connect(self.db_path) as conn:
+            return pd.read_sql_query(
+                """SELECT driver, lap_number, lap_time, s1, s2, s3,
+                          compound, tyre_life, stint, is_pit_in, is_pit_out, track_status
+                   FROM (
+                       SELECT *,
+                              ROW_NUMBER() OVER (PARTITION BY driver ORDER BY lap_time ASC) AS rn
+                       FROM laps
+                       WHERE session_id = ? AND lap_time IS NOT NULL
+                   )
+                   WHERE rn <= ?
+                   ORDER BY driver, lap_time ASC""",
+                conn, params=(session_id, limit)
+            )
+
+    def get_top_laps(self, session_id, limit=10):
+        with sqlite3.connect(self.db_path) as conn:
+            return pd.read_sql_query(
+                """SELECT driver, lap_number, lap_time, s1, s2, s3,
+                          compound, tyre_life, stint, is_pit_in, is_pit_out, track_status
+                   FROM laps
+                   WHERE session_id = ? AND lap_time IS NOT NULL
+                   ORDER BY lap_time ASC
+                   LIMIT ?""",
+                conn, params=(session_id, limit)
+            )
+
     def session_exists(self, year, event_name, session_type):
         sid = self.get_session_id(year, event_name, session_type)
         if sid is None:

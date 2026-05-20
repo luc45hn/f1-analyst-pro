@@ -14,6 +14,13 @@ from core.logger import get_logger
 
 logger = get_logger(__name__)
 
+_OMIT = {"session_id", "session_type"}
+
+
+def _to_records(df):
+    return df.drop(columns=[c for c in _OMIT if c in df.columns]).to_dict("records")
+
+
 class F1ConsultantAgent:
     def __init__(self):
         self.client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
@@ -38,10 +45,8 @@ class F1ConsultantAgent:
             qualy_id = self.db.get_session_id(year, gp_name, "Q")
             if qualy_id:
                 sessions_in_context.append("Q")
-                _q_df    = self.db.get_laps_data(qualy_id)
-                _q_clean = _q_df.dropna(subset=["lap_time"])
-                best_q   = _q_clean.loc[_q_clean.groupby("driver")["lap_time"].idxmin()].to_dict("records")
-                q_results = self.db.get_qualy_results_data(qualy_id).to_dict("records")
+                best_q = self.db.get_best_lap_per_driver(qualy_id).to_dict("records")
+                q_results = _to_records(self.db.get_qualy_results_data(qualy_id))
                 if best_q:
                     context_str += "--- MEJOR VUELTA POR PILOTO EN QUALIFYING (Q) ---\n" + str(best_q) + "\n\n"
                 if q_results:
@@ -54,29 +59,16 @@ class F1ConsultantAgent:
             race_id = self.db.get_session_id(year, gp_name, "R")
             if race_id:
                 sessions_in_context.append("R")
-                all_laps   = self.db.get_laps_data(race_id)
                 results_df = self.db.get_results_data(race_id)
                 if not results_df.empty:
-                    top20 = results_df.head(22).to_dict("records")
+                    top20 = _to_records(results_df.head(22))
                     context_str += "--- CLASIFICACIÓN FINAL DE CARRERA (R) ---\n" + str(top20) + "\n\n"
-                    best_per_driver = []
-                    for row in top20:
-                        drv = row["driver"]
-                        bl  = all_laps[all_laps["driver"] == drv].nsmallest(1, "lap_time")
-                        if not bl.empty:
-                            best_per_driver.append(bl.iloc[0].to_dict())
+                    best_per_driver = self.db.get_best_lap_per_driver(race_id).to_dict("records")
                     if best_per_driver:
                         context_str += "--- MEJOR VUELTA POR PILOTO EN CARRERA (R) ---\n" + str(best_per_driver) + "\n\n"
-                race_laps_clean = all_laps.dropna(subset=["lap_time"])
-                race_data = (
-                    race_laps_clean
-                    .groupby("driver", group_keys=False)
-                    .apply(lambda x: x.nsmallest(10, "lap_time"), include_groups=False)
-                    .reset_index(drop=True)
-                    .to_dict("records")
-                )
+                race_data = self.db.get_stint_summary(race_id).to_dict("records")
                 if race_data:
-                    context_str += "--- TOP 10 VUELTAS EN CARRERA (R) POR PILOTO ---\n" + str(race_data) + "\n\n"
+                    context_str += "--- RESUMEN DE RITMO POR STINT EN CARRERA (R) ---\n" + str(race_data) + "\n\n"
             else:
                 context_str += "ERROR: No hay datos de carrera en la DB para este GP\n\n"
 
@@ -87,17 +79,15 @@ class F1ConsultantAgent:
                 sessions_in_context.append("SS")
                 ss_results = self.db.get_results_data(ss_id)
                 if not ss_results.empty:
-                    context_str += "--- CLASIFICACIÓN FINAL SPRINT RACE (SS) ---\n" + ss_results.head(22).to_dict("records").__str__() + "\n\n"
-                ss_laps = self.db.get_laps_data(ss_id).dropna(subset=["lap_time"])
-                top_ss = ss_laps.nsmallest(10, "lap_time").to_dict("records")
+                    context_str += "--- CLASIFICACIÓN FINAL SPRINT RACE (SS) ---\n" + str(_to_records(ss_results.head(22))) + "\n\n"
+                top_ss = self.db.get_top_laps(ss_id).to_dict("records")
                 if top_ss:
                     context_str += "--- TOP 10 VUELTAS SPRINT RACE (SS) ---\n" + str(top_ss) + "\n\n"
 
             sq_id = self.db.get_session_id(year, gp_name, "SQ")
             if sq_id:
                 sessions_in_context.append("SQ")
-                sq_laps = self.db.get_laps_data(sq_id).dropna(subset=["lap_time"])
-                top_sq = sq_laps.nsmallest(10, "lap_time").to_dict("records")
+                top_sq = self.db.get_top_laps(sq_id).to_dict("records")
                 if top_sq:
                     context_str += "--- TOP 10 VUELTAS SPRINT QUALIFYING (SQ) ---\n" + str(top_sq) + "\n\n"
 
