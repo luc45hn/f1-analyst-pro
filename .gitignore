@@ -30,3 +30,6 @@ data/processed/
 
 # Claude Code
 .claude/
+
+# Logs
+logs/

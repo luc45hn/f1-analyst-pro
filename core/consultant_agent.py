@@ -10,6 +10,9 @@ from core.chart_builder import (
     plot_lap_times, plot_sector_comparison,
     plot_tyre_degradation, plot_pit_stops,
 )
+from core.logger import get_logger
+
+logger = get_logger(__name__)
 
 class F1ConsultantAgent:
     def __init__(self):
@@ -28,11 +31,13 @@ class F1ConsultantAgent:
         load_all = not (wants_qualy or wants_race or wants_sprint)
 
         context_str = f"Gran Premio: {gp_name} — Temporada {year}\n\n"
+        sessions_in_context = []
 
         # --- CLASIFICACIÓN ---
         if wants_qualy or load_all:
             qualy_id = self.db.get_session_id(year, gp_name, "Q")
             if qualy_id:
+                sessions_in_context.append("Q")
                 _q_df    = self.db.get_laps_data(qualy_id)
                 _q_clean = _q_df.dropna(subset=["lap_time"])
                 best_q   = _q_clean.loc[_q_clean.groupby("driver")["lap_time"].idxmin()].to_dict("records")
@@ -48,6 +53,7 @@ class F1ConsultantAgent:
         if wants_race or load_all:
             race_id = self.db.get_session_id(year, gp_name, "R")
             if race_id:
+                sessions_in_context.append("R")
                 all_laps   = self.db.get_laps_data(race_id)
                 results_df = self.db.get_results_data(race_id)
                 if not results_df.empty:
@@ -78,6 +84,7 @@ class F1ConsultantAgent:
         if wants_sprint or load_all:
             ss_id = self.db.get_session_id(year, gp_name, "SS")
             if ss_id:
+                sessions_in_context.append("SS")
                 ss_results = self.db.get_results_data(ss_id)
                 if not ss_results.empty:
                     context_str += "--- CLASIFICACIÓN FINAL SPRINT RACE (SS) ---\n" + ss_results.head(22).to_dict("records").__str__() + "\n\n"
@@ -88,6 +95,7 @@ class F1ConsultantAgent:
 
             sq_id = self.db.get_session_id(year, gp_name, "SQ")
             if sq_id:
+                sessions_in_context.append("SQ")
                 sq_laps = self.db.get_laps_data(sq_id).dropna(subset=["lap_time"])
                 top_sq = sq_laps.nsmallest(10, "lap_time").to_dict("records")
                 if top_sq:
@@ -110,6 +118,7 @@ class F1ConsultantAgent:
             "(ej: Qualifying (Q), Sprint Race (SS), Sprint Qualifying (SQ), Race (R))."
         )
 
+        t0 = time.time()
         for attempt in range(3):
             try:
                 response = self.client.messages.create(
@@ -124,6 +133,14 @@ class F1ConsultantAgent:
                     time.sleep(5 * (attempt + 1))
                 else:
                     raise
+
+        elapsed = time.time() - t0
+        usage = response.usage
+        cost_usd = (usage.input_tokens / 1_000_000 * 3) + (usage.output_tokens / 1_000_000 * 15)
+        logger.info(
+            "API call | GP=%s sessions=%s input=%d output=%d cost=$%.4f elapsed=%.2fs",
+            gp_name, sessions_in_context, usage.input_tokens, usage.output_tokens, cost_usd, elapsed,
+        )
         text = response.content[0].text
         try:
             chart = self._build_chart(prompt_lower, gp_name, year)

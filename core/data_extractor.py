@@ -1,8 +1,10 @@
 import fastf1
-import traceback
 import pandas as pd
 from core.config import CACHE_DIR
 from core.database_manager import F1Database
+from core.logger import get_logger
+
+logger = get_logger(__name__)
 
 _FASTF1_SESSION_MAP = {
     "SS": "Sprint",
@@ -15,11 +17,11 @@ def get_session_data(year, gp_name, session_type="R"):
     db = F1Database()
     all_laps_data = []
 
-    print("Downloading official FIA telemetry...")
+    logger.info("START ingesting | %s %s %s", year, gp_name, session_type)
     try:
         ff1_identifier = _FASTF1_SESSION_MAP.get(session_type, session_type)
         session = fastf1.get_session(year, gp_name, ff1_identifier)
-        print("Loading session data (telemetry, weather, messages)...")
+        logger.info("Loading session data (telemetry, weather) | %s %s %s", year, gp_name, session_type)
         session.load(telemetry=True, weather=True, messages=False)
 
         actual_year = session.event["EventDate"].year
@@ -29,7 +31,7 @@ def get_session_data(year, gp_name, session_type="R"):
                 f"FastF1 devolvió el evento de {actual_year}."
             )
 
-        print("Generando resumen técnico para el análisis...")
+        logger.debug("Generating technical summary | %s %s %s", year, gp_name, session_type)
         results_data = session.results.to_dict("records")
 
         for driver_number in session.drivers:
@@ -57,52 +59,51 @@ def get_session_data(year, gp_name, session_type="R"):
                         "session_type": session_type,
                     })
 
-        print("Processing lap data...")
+        logger.debug("Processing lap data | %s %s %s", year, gp_name, session_type)
 
         if not all_laps_data:
-            print(f"[WARN] No se encontraron vueltas para {year} {gp_name} {session_type}.")
+            logger.warning("No laps found | %s %s %s", year, gp_name, session_type)
             return None
 
         session_id = db.insert_session(year, gp_name, session_type)
         laps_df = pd.DataFrame(all_laps_data)
         laps_df = laps_df.dropna(subset=["s1", "s2", "s3"])
         db.insert_laps_data(session_id, laps_df)
-        print(f"[INFO] {len(laps_df)} laps saved for {year} {gp_name} {session_type}.")
+        logger.info("%d laps saved | %s %s %s", len(laps_df), year, gp_name, session_type)
 
         if session_type == "R" and results_data:
             results_df = pd.DataFrame(results_data)
             results_df["session_id"] = session_id
             db.insert_results_data(session_id, results_df)
-            print(f"[INFO] {len(results_df)} results saved for {year} {gp_name} {session_type}.")
+            logger.info("%d results saved | %s %s %s", len(results_df), year, gp_name, session_type)
         elif session_type == "Q" and results_data:
             qualy_results_df = pd.DataFrame(results_data)
             qualy_results_df["session_id"] = session_id
             db.insert_qualy_results_data(session_id, qualy_results_df)
-            print(f"[INFO] {len(qualy_results_df)} qualifying results saved for {year} {gp_name} {session_type}.")
+            logger.info("%d qualifying results saved | %s %s %s", len(qualy_results_df), year, gp_name, session_type)
         elif session_type == "SS" and results_data:
             results_df = pd.DataFrame(results_data)
             results_df["session_id"] = session_id
             db.insert_results_data(session_id, results_df)
-            print(f"[INFO] {len(results_df)} sprint race results saved for {year} {gp_name} {session_type}.")
+            logger.info("%d sprint race results saved | %s %s %s", len(results_df), year, gp_name, session_type)
         elif session_type == "SQ" and results_data:
             qualy_results_df = pd.DataFrame(results_data)
             qualy_results_df["session_id"] = session_id
             db.insert_qualy_results_data(session_id, qualy_results_df)
-            print(f"[INFO] {len(qualy_results_df)} sprint qualifying results saved for {year} {gp_name} {session_type}.")
+            logger.info("%d sprint qualifying results saved | %s %s %s", len(qualy_results_df), year, gp_name, session_type)
 
         try:
             weather_data = session.weather_data.iloc[0]
             db.insert_weather_data(session_id, weather_data)
         except Exception:
-            print(f"[WARN] Weather data not available for {year} {gp_name} {session_type}.")
+            logger.warning("Weather data not available | %s %s %s", year, gp_name, session_type)
 
-        print(f"Data for {year} {gp_name} {session_type} saved to database.")
+        logger.info("END ingesting | %s %s %s — OK", year, gp_name, session_type)
         return True
 
     except fastf1.exceptions.DataNotLoadedError as e:
-        print(f"[ERROR] FastF1 no pudo cargar datos: {e}")
+        logger.error("FastF1 DataNotLoadedError | %s %s %s: %s", year, gp_name, session_type, e)
         return None
-    except Exception as e:
-        print(f"[ERROR] Error inesperado al descargar {gp_name} {session_type}:")
-        traceback.print_exc()
+    except Exception:
+        logger.exception("Unexpected error ingesting | %s %s %s", year, gp_name, session_type)
         return None

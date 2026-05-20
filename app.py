@@ -4,6 +4,9 @@ from core.database_manager import F1Database
 from core.weekend_detector import detect_weekend_type, ensure_sessions_loaded, get_session_display_names
 from core.config import PREDEFINED_ANALYSES
 from core.gp_resolver import parse_gp_input, DEFAULT_YEAR
+from core.logger import get_logger
+
+_log = get_logger(__name__)
 
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -104,6 +107,7 @@ if chat_input := st.chat_input("Hacé una pregunta sobre el GP..."):
 
 # Process
 if prompt_to_send:
+    _log.info("query | gp=%s prompt_len=%d", st.session_state.gp_loaded, len(prompt_to_send))
     st.session_state.messages.append({"role": "user", "content": prompt_to_send})
     with st.chat_message("user"):
         st.markdown(prompt_to_send)
