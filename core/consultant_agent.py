@@ -99,7 +99,7 @@ class F1ConsultantAgent:
             if lineups:
                 context_str += "--- ALINEACIÓN DE EQUIPOS (fuente: datos de carrera) ---\n" + str(lineups) + "\n\n"
 
-        system_prompt = (
+        _system_text = (
             "Eres un analista técnico de Fórmula 1 de élite. "
             "Respondes siempre en español con precisión técnica, usando tablas Markdown para datos tabulares "
             "y bloques de cita (>) para conclusiones analíticas. "
@@ -108,14 +108,27 @@ class F1ConsultantAgent:
             "(ej: Qualifying (Q), Sprint Race (SS), Sprint Qualifying (SQ), Race (R))."
         )
 
+        if load_all:
+            system_param = [
+                {
+                    "type": "text",
+                    "text": _system_text + "\n\nContexto de datos:\n" + context_str,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
+            user_content = prompt
+        else:
+            system_param = _system_text
+            user_content = f"Contexto de datos:\n{context_str}\n\nPregunta: {prompt}"
+
         t0 = time.time()
         for attempt in range(3):
             try:
                 response = self.client.messages.create(
                     model=ANTHROPIC_MODEL,
                     max_tokens=ANTHROPIC_MAX_TOKENS,
-                    system=system_prompt,
-                    messages=[{"role": "user", "content": f"Contexto de datos:\n{context_str}\n\nPregunta: {prompt}"}]
+                    system=system_param,
+                    messages=[{"role": "user", "content": user_content}]
                 )
                 break
             except APIStatusError as e:
@@ -127,9 +140,13 @@ class F1ConsultantAgent:
         elapsed = time.time() - t0
         usage = response.usage
         cost_usd = (usage.input_tokens / 1_000_000 * 3) + (usage.output_tokens / 1_000_000 * 15)
+        cache_write = getattr(usage, "cache_creation_input_tokens", 0) or 0
+        cache_read  = getattr(usage, "cache_read_input_tokens", 0) or 0
         logger.info(
-            "API call | GP=%s sessions=%s input=%d output=%d cost=$%.4f elapsed=%.2fs",
-            gp_name, sessions_in_context, usage.input_tokens, usage.output_tokens, cost_usd, elapsed,
+            "API call | GP=%s sessions=%s input=%d output=%d "
+            "cache_write=%d cache_read=%d cost=$%.4f elapsed=%.2fs",
+            gp_name, sessions_in_context, usage.input_tokens, usage.output_tokens,
+            cache_write, cache_read, cost_usd, elapsed,
         )
         text = response.content[0].text
         try:
