@@ -7,7 +7,6 @@ load_dotenv()
 # ── Paths ─────────────────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).parent.parent
 DATA_DIR     = PROJECT_ROOT / "data"
-DB_PATH      = DATA_DIR / "f1_analyst.db"
 CACHE_DIR    = DATA_DIR / "raw"
 
 # ── Season ────────────────────────────────────────────────────────────────────
@@ -16,6 +15,12 @@ YEAR = int(os.getenv("YEAR", "2026"))
 # ── Claude ────────────────────────────────────────────────────────────────────
 ANTHROPIC_MODEL      = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 ANTHROPIC_MAX_TOKENS = int(os.getenv("ANTHROPIC_MAX_TOKENS", "8192"))
+
+# ── Supabase / PostgreSQL ─────────────────────────────────────────────────────
+SUPABASE_URL             = os.getenv("SUPABASE_URL", "")
+SUPABASE_PUBLISHABLE_KEY = os.getenv("SUPABASE_PUBLISHABLE_KEY", "")
+SUPABASE_SECRET_KEY      = os.getenv("SUPABASE_SECRET_KEY", "")
+SUPABASE_DB_URL          = os.getenv("SUPABASE_DB_URL", "")
 
 # ── Sprint weekends 2026 ─────────────────────────────────────────────────────
 SPRINT_WEEKENDS: set[str] = {
