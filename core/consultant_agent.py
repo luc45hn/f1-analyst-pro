@@ -164,7 +164,10 @@ class F1ConsultantAgent:
             "Cuando haya datos de dos años disponibles, comparalos directamente en tablas — "
             "tiempos de clasificación, ritmo de carrera, estrategias. "
             "Indicá siempre el año al que pertenece cada dato. "
-            "Destacá las diferencias más relevantes entre temporadas."
+            "Destacá las diferencias más relevantes entre temporadas. "
+            "IMPORTANTE: nunca uses H1, H2 ni H3 en tus respuestas. No pongas el nombre del GP como título. "
+            "Empezá directamente con el primer dato o tabla. "
+            "Si necesitás un separador de sección, usá texto en negrita en una línea sola, no heading markdown."
         )
 
         if load_all:
