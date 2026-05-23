@@ -88,9 +88,13 @@ def get_session_data(year, gp_name, session_type="R"):
             logger.info("%d sprint race results saved | %s %s %s", len(results_df), year, gp_name, session_type)
         elif session_type == "SQ" and results_data:
             qualy_results_df = pd.DataFrame(results_data)
-            qualy_results_df["session_id"] = session_id
-            db.insert_qualy_results_data(session_id, qualy_results_df)
-            logger.info("%d sprint qualifying results saved | %s %s %s", len(qualy_results_df), year, gp_name, session_type)
+            qualy_results_df = qualy_results_df[qualy_results_df["Position"].notna()]
+            if qualy_results_df.empty:
+                logger.warning("SQ results have no valid positions — skipping insert | %s %s", year, gp_name)
+            else:
+                qualy_results_df["session_id"] = session_id
+                db.insert_qualy_results_data(session_id, qualy_results_df)
+                logger.info("%d sprint qualifying results saved | %s %s %s", len(qualy_results_df), year, gp_name, session_type)
 
         try:
             weather_data = session.weather_data.iloc[0]

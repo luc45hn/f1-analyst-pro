@@ -22,16 +22,6 @@ SUPABASE_PUBLISHABLE_KEY = os.getenv("SUPABASE_PUBLISHABLE_KEY", "")
 SUPABASE_SECRET_KEY      = os.getenv("SUPABASE_SECRET_KEY", "")
 SUPABASE_DB_URL          = os.getenv("SUPABASE_DB_URL", "")
 
-# ── Sprint weekends 2026 ─────────────────────────────────────────────────────
-SPRINT_WEEKENDS: set[str] = {
-    "Chinese Grand Prix",
-    "Miami Grand Prix",
-    "Belgian Grand Prix",
-    "United States Grand Prix",
-    "São Paulo Grand Prix",
-    "Qatar Grand Prix",
-}
-
 # ── GP name aliases (input del usuario → nombre oficial FastF1) ───────────────
 GP_ALIASES: dict[str, str] = {
     "australia":      "Australian Grand Prix",

@@ -32,6 +32,8 @@ for key, default in [
     ("year", DEFAULT_YEAR),
     ("compare_previous_year", False),
     ("pending_compare", False),
+    ("sessions_load_summary", ""),
+    ("sessions_db_status", {}),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -101,20 +103,31 @@ with st.sidebar:
     load_btn = st.button("Cargar GP", type="primary", use_container_width=True)
 
     if load_btn and gp_input.strip():
-        gp_name, year = parse_gp_input(gp_input)
-        db = F1Database()
-        with st.spinner("⏳ Descargando telemetría..."):
-            ok = ensure_sessions_loaded(gp_name, db, year)
-        if ok:
-            st.session_state.gp_loaded = gp_name
-            st.session_state.year = year
-            st.session_state.compare_previous_year = False
-            st.session_state.weekend_type = detect_weekend_type(gp_name)
-            st.session_state.agent = F1ConsultantAgent()
-            st.session_state.messages = []
-            st.session_state.load_status = "ok"
-            st.session_state.sessions_available = get_session_display_names(gp_name)
-        else:
+        try:
+            gp_name, year = parse_gp_input(gp_input)
+            db = F1Database()
+            with st.spinner("⏳ Descargando telemetría..."):
+                ok, n_loaded, n_total = ensure_sessions_loaded(gp_name, db, year)
+            if ok:
+                st.session_state.gp_loaded = gp_name
+                st.session_state.year = year
+                st.session_state.compare_previous_year = False
+                st.session_state.weekend_type = detect_weekend_type(gp_name, year)
+                st.session_state.agent = F1ConsultantAgent()
+                st.session_state.messages = []
+                st.session_state.load_status = "ok"
+                st.session_state.sessions_available = get_session_display_names(gp_name, year)
+                st.session_state.sessions_load_summary = f"{n_loaded} de {n_total}"
+                st.session_state.sessions_db_status = {
+                    code: db.session_exists(year, gp_name, code)
+                    for code, _ in st.session_state.sessions_available
+                }
+            else:
+                st.session_state.load_status = "error"
+                st.session_state.gp_loaded = None
+                st.session_state.year = DEFAULT_YEAR
+        except Exception:
+            _log.exception("GP load failed | input=%r", gp_input)
             st.session_state.load_status = "error"
             st.session_state.gp_loaded = None
             st.session_state.year = DEFAULT_YEAR
@@ -125,7 +138,7 @@ with st.sidebar:
     if st.session_state.gp_loaded:
         wtype = st.session_state.weekend_type
         badge = "🏃 Sprint" if wtype == "sprint" else "📅 Normal"
-        st.success(f"✅ **{st.session_state.gp_loaded}**")
+        st.success(f"✅ **{st.session_state.gp_loaded} {st.session_state.year}** — {st.session_state.sessions_load_summary} sesiones")
         st.caption(f"Formato: {badge}")
         st.divider()
 
@@ -206,20 +219,21 @@ st.markdown("""
 if st.session_state.gp_loaded:
     wtype        = st.session_state.weekend_type
     format_codes = ["FP1", "SQ", "SS", "Q", "R"] if wtype == "sprint" else ["FP1", "FP2", "FP3", "Q", "R"]
-    loaded_codes = {code for code, _ in st.session_state.sessions_available}
-    pills_html   = ""
+    _db_status = st.session_state.sessions_db_status
+    pills_html = ""
     for code in format_codes:
-        if code in loaded_codes:
+        if _db_status.get(code, False):
             pills_html += (
-                f'<span style="background:#1a3320;color:#4ade80;border:1px solid #2d5a3d;'
+                f'<span style="background:#2D6A4F;color:#52B788;border:1px solid #3a8a65;'
                 f'border-radius:4px;padding:2px 9px;font-size:0.7rem;font-weight:700;'
                 f'letter-spacing:0.5px;">{code}</span>'
             )
         else:
             pills_html += (
-                f'<span style="background:#161616;color:#3a3a3a;border:1px solid #222;'
+                f'<span style="background:var(--color-background-secondary);'
+                f'color:var(--color-text-tertiary);border:1px solid transparent;'
                 f'border-radius:4px;padding:2px 9px;font-size:0.7rem;font-weight:700;'
-                f'letter-spacing:0.5px;">{code}</span>'
+                f'letter-spacing:0.5px;opacity:0.5;">{code}</span>'
             )
     format_badge = (
         '<span style="background:#2a1a0a;color:#fb923c;border:1px solid #4a2a0a;'
@@ -271,11 +285,11 @@ if st.session_state.pending_compare:
     prev_year = st.session_state.year - 1
     db = F1Database()
     with st.spinner(f"⏳ Cargando datos de {gp_name} {prev_year}..."):
-        ok = ensure_sessions_loaded(gp_name, db, prev_year)
+        ok, n_loaded, n_total = ensure_sessions_loaded(gp_name, db, prev_year)
     if ok:
         st.session_state.compare_previous_year = True
         sys_msg = (
-            f"Datos de **{gp_name} {prev_year}** cargados. "
+            f"Datos de **{gp_name} {prev_year}** cargados ({n_loaded} de {n_total} sesiones). "
             f"Podés preguntar comparativas entre {prev_year} y {st.session_state.year}."
         )
     else:
