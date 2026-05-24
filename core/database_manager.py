@@ -8,7 +8,12 @@ from core.config import SUPABASE_DB_URL
 class F1Database:
     def __init__(self):
         self.db_url = SUPABASE_DB_URL
-        self._engine = create_engine(self.db_url)
+        self._engine = create_engine(
+            self.db_url,
+            pool_pre_ping=True,
+            pool_recycle=300,
+            connect_args={"connect_timeout": 10},
+        )
         self._create_tables()
 
     def _connect(self):

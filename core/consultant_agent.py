@@ -1,5 +1,6 @@
 import re
 import time
+import unicodedata
 import anthropic
 import os
 from anthropic import APIStatusError
@@ -9,7 +10,9 @@ from core.database_manager import F1Database
 from core.chart_builder import (
     plot_lap_times, plot_sector_comparison,
     plot_tyre_degradation, plot_pit_stops,
+    plot_telemetry_trace,
 )
+from core.driver_resolver import get_driver_name_to_code
 from core.logger import get_logger
 
 logger = get_logger(__name__)
@@ -27,7 +30,7 @@ class F1ConsultantAgent:
         self.db = F1Database()
 
     def send_message(self, prompt, gp_name, year: int = DEFAULT_YEAR, compare_previous_year: bool = False):
-        prompt_lower = prompt.lower()
+        prompt_lower = unicodedata.normalize("NFD", prompt.lower()).encode("ascii", "ignore").decode()
 
         wants_qualy  = any(w in prompt_lower for w in ["clasif", "qualy", "qualifying", "pole", "q1", "q2", "q3", "grid"])
         wants_race   = any(w in prompt_lower for w in ["carrera", "race", "vuelta", "ritmo", "neumático",
@@ -36,8 +39,12 @@ class F1ConsultantAgent:
         if wants_sprint and "sq" in prompt_lower:
             wants_qualy = True
         load_all = not (wants_qualy or wants_race or wants_sprint)
-        logger.debug("intent | gp=%s wants_qualy=%s wants_race=%s wants_sprint=%s load_all=%s",
-                     gp_name, wants_qualy, wants_race, wants_sprint, load_all)
+        wants_telemetry = any(w in prompt_lower for w in [
+            "telemetria", "trace", "acelerador",
+            "freno", "frenar", "clipping", "throttle", "brake",
+        ])
+        logger.debug("intent | gp=%s wants_qualy=%s wants_race=%s wants_sprint=%s load_all=%s wants_telemetry=%s",
+                     gp_name, wants_qualy, wants_race, wants_sprint, load_all, wants_telemetry)
 
         static_context  = f"Gran Premio: {gp_name} — Temporada {year}\n\n"
         missing_context = ""
@@ -169,7 +176,13 @@ class F1ConsultantAgent:
             "Destacá las diferencias más relevantes entre temporadas. "
             "IMPORTANTE: nunca uses H1, H2 ni H3 en tus respuestas. No pongas el nombre del GP como título. "
             "Empezá directamente con el primer dato o tabla. "
-            "Si necesitás un separador de sección, usá texto en negrita en una línea sola, no heading markdown."
+            "Si necesitás un separador de sección, usá texto en negrita en una línea sola, no heading markdown. "
+            "Cuando el periodista pregunte sobre telemetría, trace de vuelta, acelerador, freno o clipping, "
+            "indicá que vas a mostrar el gráfico y explicá brevemente qué muestra cada canal antes de presentarlo. "
+            "Para solicitudes de telemetría, NUNCA verifiques si el piloto aparece en los datos de laps del contexto. "
+            "La telemetría se obtiene directamente de FastF1 de forma independiente — simplemente indicá que vas a "
+            "mostrar el gráfico y dejá que el sistema lo genere. No rechaces solicitudes de telemetría basándote "
+            "en la disponibilidad de datos en el contexto."
         )
 
         if load_all:
@@ -187,6 +200,55 @@ class F1ConsultantAgent:
             extra = "".join(filter(None, [missing_context, comparison_context]))
             user_content = f"Contexto de datos:\n{static_context}{extra}\nPregunta: {prompt}"
 
+        _NON_DRIVER = {"SQ", "SS", "FP1", "FP2", "FP3", "DRS", "VSC", "THE", "AND", "FOR"}
+
+        pre_chart = None
+        if wants_telemetry:
+            try:
+                _q_id  = self.db.get_session_id(year, gp_name, "Q")
+                _r_id  = self.db.get_session_id(year, gp_name, "R")
+                _sq_id = self.db.get_session_id(year, gp_name, "SQ") if wants_sprint else None
+                if wants_sprint and _sq_id:
+                    _stype = "SQ"
+                elif _q_id:
+                    _stype = "Q"
+                else:
+                    _stype = "R"
+                _code_map = get_driver_name_to_code(gp_name, year)
+                _seen: set[str] = set()
+                from_names: list[str] = []
+                for _tok in re.findall(r'\b\w+\b', prompt_lower):
+                    if _tok in _code_map and _code_map[_tok] not in _seen:
+                        _seen.add(_code_map[_tok])
+                        from_names.append(_code_map[_tok])
+                from_abbr = [w for w in re.findall(r'\b[A-Z]{3}\b', prompt.upper()) if w not in _NON_DRIVER]
+                from_prompt = from_names if from_names else from_abbr
+                logger.debug("telemetry | from_names=%s from_abbr=%s → from_prompt=%s stype=%s",
+                             from_names, from_abbr, from_prompt, _stype)
+                if from_prompt:
+                    _tel_drivers = from_prompt[:2]
+                elif _q_id or _r_id:
+                    _laps = self.db.get_laps_data(_q_id or _r_id)
+                    _tel_drivers = _laps["driver"].unique().tolist()[:1]
+                else:
+                    _tel_drivers = []
+                logger.debug("telemetry | final drivers=%s session_type=%s", _tel_drivers, _stype)
+                if _tel_drivers:
+                    pre_chart = plot_telemetry_trace(None, gp_name, year, _tel_drivers, _stype)
+                    if pre_chart is not None:
+                        logger.debug("pre_chart OK | drivers=%s session=%s", _tel_drivers, _stype)
+                        user_content += (
+                            f"\n\n[SISTEMA: El gráfico de telemetría de {' vs '.join(_tel_drivers)} "
+                            f"en {_stype} ya fue generado y se mostrará junto a tu respuesta. "
+                            "Explicá brevemente qué muestra cada canal (Speed, Throttle, Brake, Gear) "
+                            "y qué conclusiones técnicas se pueden sacar. No generes código.]"
+                        )
+                    else:
+                        logger.debug("pre_chart falló o retornó None | drivers=%s session=%s", _tel_drivers, _stype)
+            except Exception:
+                logger.warning("telemetry chart failed pre-API | gp=%s", gp_name)
+
+        logger.debug("user_content (primeros 200 chars) | %s", user_content[:200])
         t0 = time.time()
         for attempt in range(3):
             try:
@@ -215,12 +277,15 @@ class F1ConsultantAgent:
             cache_write, cache_read, cost_usd, elapsed,
         )
         text = response.content[0].text
-        try:
-            chart = self._build_chart(prompt_lower, gp_name, year)
-            if chart is not None:
-                logger.debug("chart generated | gp=%s", gp_name)
-        except Exception:
-            chart = None
+        if pre_chart is not None:
+            chart = pre_chart
+        else:
+            try:
+                chart = self._build_chart(prompt_lower, gp_name, year)
+                if chart is not None:
+                    logger.debug("chart generated | gp=%s", gp_name)
+            except Exception:
+                chart = None
         return {"text": text, "chart": chart}
 
     def _build_chart(self, prompt_lower: str, gp_name: str, year: int):
