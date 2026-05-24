@@ -272,7 +272,7 @@ for i, msg in enumerate(st.session_state.messages):
             unsafe_allow_html=True,
         )
     else:
-        _avatar = "◆" if msg["role"] == "assistant" else "👤"
+        _avatar = "📊" if msg["role"] == "assistant" else "🎙️"
         with st.chat_message(msg["role"], avatar=_avatar):
             st.markdown(msg["content"])
             if msg["role"] == "assistant" and msg.get("chart") is not None:
@@ -310,7 +310,7 @@ if chat_input := st.chat_input("Hacé una pregunta sobre el GP..."):
 if prompt_to_send:
     _log.info("query | gp=%s prompt_len=%d", st.session_state.gp_loaded, len(prompt_to_send))
     st.session_state.messages.append({"role": "user", "content": prompt_to_send})
-    with st.chat_message("user", avatar="👤"):
+    with st.chat_message("user", avatar="🎙️"):
         st.markdown(prompt_to_send)
 
     with st.chat_message("assistant", avatar="📊"):
