@@ -77,8 +77,10 @@ if not st.session_state.supabase_session:
                 resp = _sb.auth.sign_in_with_password({"email": email, "password": password})
                 st.session_state.supabase_session = resp.session
                 st.session_state.auth_error = None
+                _log.info("login success | email=%s", email)
                 st.rerun()
             except Exception as e:
+                _log.warning("login failed | email=%s error=%s", email, e)
                 st.session_state.auth_error = str(e)
         if st.session_state.auth_error:
             st.error(f"❌ {st.session_state.auth_error}")
@@ -106,9 +108,12 @@ with st.sidebar:
         try:
             gp_name, year = parse_gp_input(gp_input)
             db = F1Database()
+            _t0_load = time.time()
             with st.spinner("⏳ Descargando telemetría..."):
                 ok, n_loaded, n_total = ensure_sessions_loaded(gp_name, db, year)
             if ok:
+                _log.info("GP loaded | gp=%s year=%d sessions=%d/%d elapsed=%.1fs",
+                          gp_name, year, n_loaded, n_total, time.time() - _t0_load)
                 st.session_state.gp_loaded = gp_name
                 st.session_state.year = year
                 st.session_state.compare_previous_year = False
@@ -199,6 +204,7 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
     if st.button("Cerrar sesión", use_container_width=True, key="btn_logout"):
+        _log.info("logout | email=%s", _user_email)
         _sb.auth.sign_out()
         for k in list(st.session_state.keys()):
             del st.session_state[k]
@@ -287,6 +293,8 @@ if st.session_state.pending_compare:
     with st.spinner(f"⏳ Cargando datos de {gp_name} {prev_year}..."):
         ok, n_loaded, n_total = ensure_sessions_loaded(gp_name, db, prev_year)
     if ok:
+        _log.info("compare activated | gp=%s prev_year=%d sessions=%d/%d",
+                  gp_name, prev_year, n_loaded, n_total)
         st.session_state.compare_previous_year = True
         sys_msg = (
             f"Datos de **{gp_name} {prev_year}** cargados ({n_loaded} de {n_total} sesiones). "

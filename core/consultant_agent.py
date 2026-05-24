@@ -36,6 +36,8 @@ class F1ConsultantAgent:
         if wants_sprint and "sq" in prompt_lower:
             wants_qualy = True
         load_all = not (wants_qualy or wants_race or wants_sprint)
+        logger.debug("intent | gp=%s wants_qualy=%s wants_race=%s wants_sprint=%s load_all=%s",
+                     gp_name, wants_qualy, wants_race, wants_sprint, load_all)
 
         static_context  = f"Gran Premio: {gp_name} — Temporada {year}\n\n"
         missing_context = ""
@@ -215,6 +217,8 @@ class F1ConsultantAgent:
         text = response.content[0].text
         try:
             chart = self._build_chart(prompt_lower, gp_name, year)
+            if chart is not None:
+                logger.debug("chart generated | gp=%s", gp_name)
         except Exception:
             chart = None
         return {"text": text, "chart": chart}
