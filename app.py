@@ -65,7 +65,7 @@ if not st.session_state.supabase_session:
         with st.form("login_form"):
             email     = st.text_input("Email")
             password  = st.text_input("Contraseña", type="password")
-            submitted = st.form_submit_button("Iniciar sesión", use_container_width=True)
+            submitted = st.form_submit_button("Iniciar sesión", width="stretch")
             st.markdown(
                 '<div style="text-align:center;font-size:11px;color:#444;padding-top:8px;">'
                 'Acceso restringido · Solo usuarios autorizados</div>',
@@ -102,7 +102,7 @@ with st.sidebar:
     """.format(year=st.session_state.year), unsafe_allow_html=True)
 
     gp_input = st.text_input("Gran Premio", placeholder="ej: Miami, Monaco, Australia...")
-    load_btn = st.button("Cargar GP", type="primary", use_container_width=True)
+    load_btn = st.button("Cargar GP", type="primary", width="stretch")
 
     if load_btn and gp_input.strip():
         try:
@@ -180,13 +180,13 @@ with st.sidebar:
                 unsafe_allow_html=True,
             )
             for btn_label, prompt in items:
-                if st.button(btn_label, use_container_width=True, key=f"btn_{prompt}"):
+                if st.button(btn_label, width="stretch", key=f"btn_{prompt}"):
                     st.session_state.pending_prompt = prompt
                     st.rerun()
 
         st.divider()
         if not st.session_state.compare_previous_year:
-            if st.button("📅 Comparar con año anterior", use_container_width=True, key="btn_compare"):
+            if st.button("📅 Comparar con año anterior", width="stretch", key="btn_compare"):
                 st.session_state.pending_compare = True
                 st.rerun()
         else:
@@ -203,7 +203,7 @@ with st.sidebar:
         f'👤 {_user_email}</div>',
         unsafe_allow_html=True,
     )
-    if st.button("Cerrar sesión", use_container_width=True, key="btn_logout"):
+    if st.button("Cerrar sesión", width="stretch", key="btn_logout"):
         _log.info("logout | email=%s", _user_email)
         _sb.auth.sign_out()
         for k in list(st.session_state.keys()):
@@ -282,7 +282,7 @@ for i, msg in enumerate(st.session_state.messages):
         with st.chat_message(msg["role"], avatar=_avatar):
             st.markdown(msg["content"])
             if msg["role"] == "assistant" and msg.get("chart") is not None:
-                st.plotly_chart(msg["chart"], use_container_width=True, key=f"chart_{i}")
+                st.plotly_chart(msg["chart"], width="stretch", key=f"chart_{i}")
 
 # Handle comparison data loading
 if st.session_state.pending_compare:
@@ -332,7 +332,7 @@ if prompt_to_send:
                 )
             st.markdown(result["text"])
             if result["chart"] is not None:
-                st.plotly_chart(result["chart"], use_container_width=True, key=f"chart_{len(st.session_state.messages)}")
+                st.plotly_chart(result["chart"], width="stretch", key=f"chart_{len(st.session_state.messages)}")
             st.session_state.messages.append({"role": "assistant", "content": result["text"], "chart": result["chart"]})
         except Exception as e:
             _is_overloaded = (
