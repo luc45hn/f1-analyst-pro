@@ -4,7 +4,7 @@ from supabase import create_client
 from core.consultant_agent import F1ConsultantAgent
 from core.database_manager import F1Database
 from core.weekend_detector import detect_weekend_type, ensure_sessions_loaded, get_session_display_names
-from core.config import PREDEFINED_ANALYSES, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY
+from core.config import PREDEFINED_ANALYSES, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, APP_VERSION
 from core.gp_resolver import parse_gp_input, DEFAULT_YEAR
 from core.logger import get_logger
 
@@ -201,6 +201,10 @@ with st.sidebar:
         f'<div style="color:#555;font-size:0.68rem;letter-spacing:0.5px;padding:0 2px 6px 2px;'
         f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="{_user_email}">'
         f'👤 {_user_email}</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f'<div style="font-size:10px;color:var(--color-text-tertiary);margin-top:4px;">v{APP_VERSION}</div>',
         unsafe_allow_html=True,
     )
     if st.button("Cerrar sesión", width="stretch", key="btn_logout"):

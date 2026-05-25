@@ -12,6 +12,9 @@ CACHE_DIR    = DATA_DIR / "raw"
 # ── Season ────────────────────────────────────────────────────────────────────
 YEAR = int(os.getenv("YEAR", "2026"))
 
+# ── App ───────────────────────────────────────────────────────────────────────
+APP_VERSION = "1.0.0"
+
 # ── Claude ────────────────────────────────────────────────────────────────────
 ANTHROPIC_MODEL      = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 ANTHROPIC_MAX_TOKENS = int(os.getenv("ANTHROPIC_MAX_TOKENS", "8192"))
