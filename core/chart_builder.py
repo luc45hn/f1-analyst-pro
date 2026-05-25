@@ -186,10 +186,10 @@ def plot_telemetry_trace(
         fastf1.Cache.enable_cache(str(CACHE_DIR))
         session = fastf1.get_session(year, gp_name, ff1_identifier)
         _log.debug("telemetry | get_session OK → %s", session.name)
-        session.load(telemetry=True, weather=False, messages=False)
+        session.load(laps=True, telemetry=True, weather=False, messages=False)
         _log.debug("telemetry | session.load OK | laps=%d", len(session.laps))
     except Exception as e:
-        _log.warning("telemetry | session load failed | %s", e)
+        _log.exception("telemetry | session load failed | %s", e)
         return None
 
     fig = make_subplots(
