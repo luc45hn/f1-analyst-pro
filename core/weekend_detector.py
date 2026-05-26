@@ -15,9 +15,13 @@ def _get_event(year: int, gp_name: str):
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         fastf1.Cache.enable_cache(str(CACHE_DIR))
         try:
-            _event_cache[key] = fastf1.get_event(year, gp_name)
+            event = fastf1.get_event(year, gp_name)
         except ValueError as e:
             raise GPNotFoundError(str(e)) from e
+        event_name = event.get("EventName", "") or ""
+        if not event_name.strip():
+            raise GPNotFoundError(f"No se encontró un evento válido para '{gp_name}' {year}.")
+        _event_cache[key] = event
     return _event_cache[key]
 
 

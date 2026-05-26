@@ -1,9 +1,10 @@
+import re
 import time
 import streamlit as st
 from supabase import create_client
 from core.consultant_agent import F1ConsultantAgent
 from core.database_manager import F1Database
-from core.weekend_detector import detect_weekend_type, ensure_sessions_loaded, get_session_display_names
+from core.weekend_detector import detect_weekend_type, ensure_sessions_loaded, get_session_display_names, _get_event
 from core.config import PREDEFINED_ANALYSES, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, APP_VERSION, DAILY_COST_LIMIT_USD
 from core.gp_resolver import parse_gp_input, DEFAULT_YEAR, GPNotFoundError
 from core.logger import get_logger
@@ -37,6 +38,7 @@ for key, default in [
     ("pending_compare", False),
     ("sessions_load_summary", ""),
     ("sessions_db_status", {}),
+    ("gp_input_raw", ""),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -129,7 +131,9 @@ with st.sidebar:
             if ok:
                 _log.info("GP loaded | gp=%s year=%d sessions=%d/%d elapsed=%.1fs",
                           gp_name, year, n_loaded, n_total, time.time() - _t0_load)
-                st.session_state.gp_loaded = gp_name
+                _official = _get_event(year, gp_name).get("EventName", "").strip() or gp_name
+                st.session_state.gp_loaded = _official
+                st.session_state.gp_input_raw = gp_input.strip()
                 st.session_state.year = year
                 st.session_state.compare_previous_year = False
                 st.session_state.weekend_type = detect_weekend_type(gp_name, year)
@@ -184,6 +188,9 @@ with st.sidebar:
         wtype = st.session_state.weekend_type
         badge = "🏃 Sprint" if wtype == "sprint" else "📅 Normal"
         st.success(f"✅ **{st.session_state.gp_loaded} {st.session_state.year}** — {st.session_state.sessions_load_summary} sesiones")
+        _raw_name = re.sub(r'\b20\d{2}\b', '', st.session_state.gp_input_raw).strip()
+        if _raw_name.lower() != st.session_state.gp_loaded.lower():
+            st.caption(f"Nombre interpretado como: **{st.session_state.gp_loaded}**")
         st.caption(f"Formato: {badge}")
         st.divider()
 
@@ -428,8 +435,15 @@ if prompt_to_send:
                 "529" in str(e) or "overloaded_error" in str(e).lower()
                 or (hasattr(e, "status_code") and e.status_code == 529)
             )
+            _is_usage_limit = (
+                hasattr(e, "status_code") and e.status_code == 400
+                and "api usage limits" in str(e).lower()
+            )
             if _is_overloaded:
                 error_msg = "⏳ El servicio está temporalmente saturado. Esperá unos segundos y volvé a intentar la misma pregunta."
+                st.warning(error_msg)
+            elif _is_usage_limit:
+                error_msg = "⚠️ El servicio de análisis está temporalmente no disponible. Por favor intentá más tarde."
                 st.warning(error_msg)
             else:
                 error_msg = f"Error al procesar la consulta: {e}"
