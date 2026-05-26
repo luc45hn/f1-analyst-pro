@@ -8,3 +8,5 @@ plotly
 psycopg2-binary
 supabase
 sqlalchemy
+pytest
+pytest-mock
