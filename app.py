@@ -39,6 +39,7 @@ for key, default in [
     ("sessions_load_summary", ""),
     ("sessions_db_status", {}),
     ("gp_input_raw", ""),
+    ("gp_display", None),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -132,7 +133,8 @@ with st.sidebar:
                 _log.info("GP loaded | gp=%s year=%d sessions=%d/%d elapsed=%.1fs",
                           gp_name, year, n_loaded, n_total, time.time() - _t0_load)
                 _official = _get_event(year, gp_name).get("EventName", "").strip() or gp_name
-                st.session_state.gp_loaded = _official
+                st.session_state.gp_loaded = gp_name
+                st.session_state.gp_display = _official
                 st.session_state.gp_input_raw = gp_input.strip()
                 st.session_state.year = year
                 st.session_state.compare_previous_year = False
@@ -151,6 +153,7 @@ with st.sidebar:
                 st.session_state.load_error_gp = gp_name
                 st.session_state.load_error_year = year
                 st.session_state.gp_loaded = None
+                st.session_state.gp_display = None
                 st.session_state.year = DEFAULT_YEAR
         except GPNotFoundError:
             _log.warning("GP not found | input=%r", gp_input)
@@ -158,16 +161,19 @@ with st.sidebar:
             st.session_state.load_error_gp = gp_name
             st.session_state.load_error_year = year
             st.session_state.gp_loaded = None
+            st.session_state.gp_display = None
             st.session_state.year = DEFAULT_YEAR
         except (ConnectionError, TimeoutError, OSError):
             _log.exception("GP load connection error | input=%r", gp_input)
             st.session_state.load_status = "connection_error"
             st.session_state.gp_loaded = None
+            st.session_state.gp_display = None
             st.session_state.year = DEFAULT_YEAR
         except Exception:
             _log.exception("GP load failed | input=%r", gp_input)
             st.session_state.load_status = "error"
             st.session_state.gp_loaded = None
+            st.session_state.gp_display = None
             st.session_state.year = DEFAULT_YEAR
 
     _ls = st.session_state.load_status
@@ -187,10 +193,10 @@ with st.sidebar:
     if st.session_state.gp_loaded:
         wtype = st.session_state.weekend_type
         badge = "🏃 Sprint" if wtype == "sprint" else "📅 Normal"
-        st.success(f"✅ **{st.session_state.gp_loaded} {st.session_state.year}** — {st.session_state.sessions_load_summary} sesiones")
+        st.success(f"✅ **{st.session_state.gp_display} {st.session_state.year}** — {st.session_state.sessions_load_summary} sesiones")
         _raw_name = re.sub(r'\b20\d{2}\b', '', st.session_state.gp_input_raw).strip()
-        if _raw_name.lower() != st.session_state.gp_loaded.lower():
-            st.caption(f"Nombre interpretado como: **{st.session_state.gp_loaded}**")
+        if _raw_name.lower() != st.session_state.gp_display.lower():
+            st.caption(f"Nombre interpretado como: **{st.session_state.gp_display}**")
         st.caption(f"Formato: {badge}")
         st.divider()
 
@@ -313,7 +319,7 @@ if st.session_state.gp_loaded:
     st.markdown(
         f'<div style="padding:1.25rem 0 1.25rem 0;border-bottom:1px solid #1e1e1e;margin-bottom:1.5rem;">'
         f'<div style="color:#555;font-size:0.68rem;font-weight:600;letter-spacing:2px;margin-bottom:6px;">GRAN PREMIO</div>'
-        f'<div style="font-size:2rem;font-weight:800;line-height:1.1;margin-bottom:12px;">{st.session_state.gp_loaded} <span style="color:#333;font-size:1.1rem;font-weight:400;">{st.session_state.year}</span></div>'
+        f'<div style="font-size:2rem;font-weight:800;line-height:1.1;margin-bottom:12px;">{st.session_state.gp_display} <span style="color:#333;font-size:1.1rem;font-weight:400;">{st.session_state.year}</span></div>'
         f'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
         f'{format_badge}'
         f'<span style="color:#2a2a2a;">|</span>'
@@ -377,20 +383,21 @@ for i, msg in enumerate(st.session_state.messages):
 if st.session_state.pending_compare:
     st.session_state.pending_compare = False
     gp_name = st.session_state.gp_loaded
+    gp_display = st.session_state.gp_display or gp_name
     prev_year = st.session_state.year - 1
     db = F1Database()
-    with st.spinner(f"⏳ Cargando datos de {gp_name} {prev_year}..."):
+    with st.spinner(f"⏳ Cargando datos de {gp_display} {prev_year}..."):
         ok, n_loaded, n_total = ensure_sessions_loaded(gp_name, db, prev_year)
     if ok:
         _log.info("compare activated | gp=%s prev_year=%d sessions=%d/%d",
                   gp_name, prev_year, n_loaded, n_total)
         st.session_state.compare_previous_year = True
         sys_msg = (
-            f"Datos de **{gp_name} {prev_year}** cargados ({n_loaded} de {n_total} sesiones). "
+            f"Datos de **{gp_display} {prev_year}** cargados ({n_loaded} de {n_total} sesiones). "
             f"Podés preguntar comparativas entre {prev_year} y {st.session_state.year}."
         )
     else:
-        sys_msg = f"No se encontraron datos de {gp_name} {prev_year} en FastF1."
+        sys_msg = f"No se encontraron datos de {gp_display} {prev_year} en FastF1."
     st.session_state.messages.append({"role": "system", "content": sys_msg})
     st.rerun()
 
