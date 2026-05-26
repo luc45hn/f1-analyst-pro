@@ -333,6 +333,7 @@ if prompt_to_send:
                     st.session_state.gp_loaded,
                     st.session_state.year,
                     compare_previous_year=st.session_state.compare_previous_year,
+                    user_email=_user_email,
                 )
             st.markdown(result["text"])
             if result["chart"] is not None:

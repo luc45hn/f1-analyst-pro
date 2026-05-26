@@ -29,7 +29,7 @@ class F1ConsultantAgent:
         self.client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         self.db = F1Database()
 
-    def send_message(self, prompt, gp_name, year: int = DEFAULT_YEAR, compare_previous_year: bool = False):
+    def send_message(self, prompt, gp_name, year: int = DEFAULT_YEAR, compare_previous_year: bool = False, user_email: str = ""):
         prompt_lower = unicodedata.normalize("NFD", prompt.lower()).encode("ascii", "ignore").decode()
 
         wants_qualy  = any(w in prompt_lower for w in ["clasif", "qualy", "qualifying", "pole", "q1", "q2", "q3", "grid"])
@@ -286,6 +286,24 @@ class F1ConsultantAgent:
                     logger.debug("chart generated | gp=%s", gp_name)
             except Exception:
                 chart = None
+        self.db.log_query(
+            user_email=user_email,
+            gp_name=gp_name,
+            year=year,
+            prompt=prompt,
+            intent={
+                "wants_qualy": wants_qualy,
+                "wants_race": wants_race,
+                "wants_sprint": wants_sprint,
+                "wants_telemetry": wants_telemetry,
+                "load_all": load_all,
+            },
+            has_chart=chart is not None,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            cost_usd=cost_usd,
+            elapsed_seconds=round(elapsed, 2),
+        )
         return {"text": text, "chart": chart}
 
     def _build_chart(self, prompt_lower: str, gp_name: str, year: int):

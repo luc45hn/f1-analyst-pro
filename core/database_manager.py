@@ -1,8 +1,12 @@
 
+import json
 import psycopg2
 from sqlalchemy import create_engine, text
 import pandas as pd
 from core.config import SUPABASE_DB_URL
+from core.logger import get_logger
+
+_log = get_logger(__name__)
 
 
 class F1Database:
@@ -325,3 +329,24 @@ class F1Database:
 
     def get_all_sessions(self):
         return pd.read_sql_query(text("SELECT * FROM sessions"), self._engine)
+
+    def log_query(self, user_email, gp_name, year, prompt, intent,
+                  has_chart, input_tokens, output_tokens, cost_usd, elapsed_seconds):
+        try:
+            conn = self._connect()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """INSERT INTO queries
+                           (user_email, gp_name, year, prompt, intent,
+                            has_chart, input_tokens, output_tokens, cost_usd, elapsed_seconds)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                        (user_email, gp_name, year, prompt,
+                         json.dumps(intent), has_chart,
+                         input_tokens, output_tokens, cost_usd, elapsed_seconds),
+                    )
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception:
+            _log.warning("log_query failed silently | gp=%s", gp_name)
