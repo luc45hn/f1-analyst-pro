@@ -212,6 +212,34 @@ The limit is configurable via `DAILY_COST_LIMIT_USD` in `core/config.py`.
 
 ---
 
+## Alternative LLM Providers
+
+The project uses Claude Sonnet 4.6 by default, but `consultant_agent.py` can be adapted to other providers. The main change is replacing the Anthropic client with the provider's SDK.
+
+### Google Gemini (free tier)
+
+Gemini 2.5 Flash offers a generous free tier (1,500 requests/day, no credit card required) that covers typical usage for small teams. The trade-off is that Google may use free-tier prompts for model training.
+
+```python
+# Replace in consultant_agent.py
+# From:
+from anthropic import Anthropic
+client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+
+# To:
+import google.generativeai as genai
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+model = genai.GenerativeModel("gemini-2.5-flash")
+```
+
+The response parsing and prompt caching logic will also need to be adapted to Gemini's API format. Quality is slightly lower than Sonnet for complex multi-session comparisons, but sufficient for standard race analysis queries.
+
+### Local models (Ollama + LLaMA)
+
+Running a local model via Ollama eliminates API costs entirely but requires a GPU for acceptable response times (~7s vs ~2-5min on CPU). Replace the Anthropic client with an Ollama-compatible HTTP call to `http://localhost:11434`.
+
+---
+
 ## Testing
 
 ```bash
