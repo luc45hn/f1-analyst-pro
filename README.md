@@ -4,7 +4,7 @@
 
 **Note:** All agent responses and the user interface are in Spanish, as the tool is designed for Spanish-speaking journalists and analysts.
 
-[![Version](https://img.shields.io/badge/version-1.1.0-blue)](https://github.com/luc45hn/f1-analyst-pro)
+[![Version](https://img.shields.io/badge/version-1.2.0-blue)](https://github.com/luc45hn/f1-analyst-pro)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.x-red)](https://streamlit.io/)
 [![Claude](https://img.shields.io/badge/Claude-Sonnet%204.6-orange)](https://anthropic.com/)
@@ -22,6 +22,9 @@ Typical queries include:
 - "What was the impact of the Safety Car on tyre strategies?"
 - "Compare qualifying pace between Suzuka 2025 and 2026 — what changed with the new regulations?"
 - "Show me the telemetry trace for Colapinto in Sprint Qualifying"
+- "Mostrame el progreso de carga mientras se descarga la telemetría de FastF1"
+
+The interface includes a welcome screen with example queries for first-time users, friendly error messages, and progressive status indicators during long operations.
 
 ---
 
@@ -200,6 +203,15 @@ This enables future optimization based on real usage patterns.
 
 ---
 
+## Usage Limits
+
+Each user has a daily cost limit of **$2.00 USD**. The limit resets at midnight.
+The current daily spend is visible in the sidebar footer next to the user email.
+If the limit is reached, the agent returns a friendly message without calling the API.
+The limit is configurable via `DAILY_COST_LIMIT_USD` in `core/config.py`.
+
+---
+
 ## Testing
 
 ```bash
@@ -354,6 +366,7 @@ f1-analyst-pro/
 
 ## Roadmap
 
+- [x] Daily cost limit per user (configurable, default $2.00/day)
 - [ ] FP1/FP2/FP3 ingestion and analysis
 - [ ] Automatic post-race report generation (PDF export)
 - [ ] Multi-season constructor championship tracking

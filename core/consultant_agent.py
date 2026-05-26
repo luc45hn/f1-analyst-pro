@@ -4,7 +4,8 @@ import unicodedata
 import anthropic
 import os
 from anthropic import APIStatusError
-from core.config import ANTHROPIC_MODEL, ANTHROPIC_MAX_TOKENS
+from datetime import date as _date
+from core.config import ANTHROPIC_MODEL, ANTHROPIC_MAX_TOKENS, DAILY_COST_LIMIT_USD
 from core.gp_resolver import DEFAULT_YEAR
 from core.database_manager import F1Database
 from core.chart_builder import (
@@ -30,6 +31,15 @@ class F1ConsultantAgent:
         self.db = F1Database()
 
     def send_message(self, prompt, gp_name, year: int = DEFAULT_YEAR, compare_previous_year: bool = False, user_email: str = "", on_status=None):
+        try:
+            daily_cost = self.db.get_daily_cost(user_email, _date.today())
+            if daily_cost >= DAILY_COST_LIMIT_USD:
+                return {
+                    "text": "⚠️ Alcanzaste el límite diario de uso ($2.00). El límite se resetea a medianoche. Si necesitás más consultas, contactá al administrador.",
+                    "chart": None,
+                }
+        except Exception:
+            pass
         prompt_lower = unicodedata.normalize("NFD", prompt.lower()).encode("ascii", "ignore").decode()
 
         wants_qualy  = any(w in prompt_lower for w in ["clasif", "qualy", "qualifying", "pole", "q1", "q2", "q3", "grid"])

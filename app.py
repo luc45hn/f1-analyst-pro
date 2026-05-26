@@ -4,7 +4,7 @@ from supabase import create_client
 from core.consultant_agent import F1ConsultantAgent
 from core.database_manager import F1Database
 from core.weekend_detector import detect_weekend_type, ensure_sessions_loaded, get_session_display_names
-from core.config import PREDEFINED_ANALYSES, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, APP_VERSION
+from core.config import PREDEFINED_ANALYSES, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, APP_VERSION, DAILY_COST_LIMIT_USD
 from core.gp_resolver import parse_gp_input, DEFAULT_YEAR, GPNotFoundError
 from core.logger import get_logger
 
@@ -243,6 +243,17 @@ with st.sidebar:
         f'👤 {_user_email}</div>',
         unsafe_allow_html=True,
     )
+    try:
+        from datetime import date as _date
+        _cost_db = F1Database()
+        _daily_cost = _cost_db.get_daily_cost(_user_email, _date.today())
+        st.markdown(
+            f'<div style="font-size:10px;color:var(--color-text-tertiary);margin-top:2px;padding:0 2px 4px 2px;">'
+            f'Uso hoy: ${_daily_cost:.2f} / ${DAILY_COST_LIMIT_USD:.2f}</div>',
+            unsafe_allow_html=True,
+        )
+    except Exception:
+        pass
     st.markdown(
         f'<div style="font-size:10px;color:var(--color-text-tertiary);margin-top:4px;">v{APP_VERSION}</div>',
         unsafe_allow_html=True,

@@ -350,3 +350,18 @@ class F1Database:
                 conn.close()
         except Exception:
             _log.warning("log_query failed silently | gp=%s", gp_name)
+
+    def get_daily_cost(self, user_email: str, date) -> float:
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """SELECT COALESCE(SUM(cost_usd), 0)
+                       FROM queries
+                       WHERE user_email = %s
+                       AND DATE(created_at) = %s""",
+                    (user_email, date),
+                )
+                return float(cur.fetchone()[0])
+        finally:
+            conn.close()
