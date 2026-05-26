@@ -3,6 +3,12 @@ from core.config import normalize_gp_name
 
 DEFAULT_YEAR = 2026
 
+
+class GPNotFoundError(Exception):
+    """El nombre ingresado no resuelve a un evento conocido de FastF1."""
+    pass
+
+
 def parse_gp_input(user_input: str) -> tuple[str, int]:
     """Extrae (gp_name, year) del input del usuario.
     Si no hay año explícito, retorna DEFAULT_YEAR (2026).

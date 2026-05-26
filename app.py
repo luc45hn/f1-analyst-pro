@@ -5,7 +5,7 @@ from core.consultant_agent import F1ConsultantAgent
 from core.database_manager import F1Database
 from core.weekend_detector import detect_weekend_type, ensure_sessions_loaded, get_session_display_names
 from core.config import PREDEFINED_ANALYSES, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, APP_VERSION
-from core.gp_resolver import parse_gp_input, DEFAULT_YEAR
+from core.gp_resolver import parse_gp_input, DEFAULT_YEAR, GPNotFoundError
 from core.logger import get_logger
 
 _log = get_logger(__name__)
@@ -22,12 +22,15 @@ st.set_page_config(
 for key, default in [
     ("supabase_session", None),
     ("auth_error", None),
+    ("session_expired", False),
     ("messages", []),
     ("gp_loaded", None),
     ("weekend_type", None),
     ("agent", None),
     ("pending_prompt", None),
     ("load_status", None),
+    ("load_error_gp", ""),
+    ("load_error_year", DEFAULT_YEAR),
     ("sessions_available", []),
     ("year", DEFAULT_YEAR),
     ("compare_previous_year", False),
@@ -45,6 +48,7 @@ _sb = create_client(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY)
 if st.session_state.supabase_session:
     if st.session_state.supabase_session.expires_at < int(time.time()):
         _sb.auth.sign_out()
+        st.session_state.session_expired = True
         st.session_state.supabase_session = None
 
 if not st.session_state.supabase_session:
@@ -62,6 +66,9 @@ if not st.session_state.supabase_session:
             </div>
         """, unsafe_allow_html=True)
 
+        if st.session_state.session_expired:
+            st.warning("⏱️ Tu sesión expiró. Ingresá nuevamente para continuar.")
+
         with st.form("login_form"):
             email     = st.text_input("Email")
             password  = st.text_input("Contraseña", type="password")
@@ -77,6 +84,7 @@ if not st.session_state.supabase_session:
                 resp = _sb.auth.sign_in_with_password({"email": email, "password": password})
                 st.session_state.supabase_session = resp.session
                 st.session_state.auth_error = None
+                st.session_state.session_expired = False
                 _log.info("login success | email=%s", email)
                 st.rerun()
             except Exception as e:
@@ -101,10 +109,17 @@ with st.sidebar:
         <hr style="border:none; border-top:1px solid #2a2a2a; margin:0 0 1rem 0;">
     """.format(year=st.session_state.year), unsafe_allow_html=True)
 
-    gp_input = st.text_input("Gran Premio", placeholder="ej: Miami, Monaco, Australia...")
+    gp_input = st.text_input("Gran Premio", placeholder="ej: Canada, Suzuka, Monaco...")
+    st.markdown(
+        '<div style="font-size: 11px; color: var(--color-text-tertiary); margin-bottom: 8px;">'
+        'Escribí el nombre en español o inglés. Podés incluir el año: \'Canada 2025\''
+        '</div>',
+        unsafe_allow_html=True,
+    )
     load_btn = st.button("Cargar GP", type="primary", width="stretch")
 
     if load_btn and gp_input.strip():
+        gp_name, year = gp_input.strip(), DEFAULT_YEAR  # fallback para mensajes de error
         try:
             gp_name, year = parse_gp_input(gp_input)
             db = F1Database()
@@ -128,16 +143,41 @@ with st.sidebar:
                     for code, _ in st.session_state.sessions_available
                 }
             else:
-                st.session_state.load_status = "error"
+                st.session_state.load_status = "no_data"
+                st.session_state.load_error_gp = gp_name
+                st.session_state.load_error_year = year
                 st.session_state.gp_loaded = None
                 st.session_state.year = DEFAULT_YEAR
+        except GPNotFoundError:
+            _log.warning("GP not found | input=%r", gp_input)
+            st.session_state.load_status = "not_found"
+            st.session_state.load_error_gp = gp_name
+            st.session_state.load_error_year = year
+            st.session_state.gp_loaded = None
+            st.session_state.year = DEFAULT_YEAR
+        except (ConnectionError, TimeoutError, OSError):
+            _log.exception("GP load connection error | input=%r", gp_input)
+            st.session_state.load_status = "connection_error"
+            st.session_state.gp_loaded = None
+            st.session_state.year = DEFAULT_YEAR
         except Exception:
             _log.exception("GP load failed | input=%r", gp_input)
             st.session_state.load_status = "error"
             st.session_state.gp_loaded = None
             st.session_state.year = DEFAULT_YEAR
 
-    if st.session_state.load_status == "error":
+    _ls = st.session_state.load_status
+    if _ls in ("not_found", "no_data"):
+        _eg = st.session_state.load_error_gp
+        _ey = st.session_state.load_error_year
+        st.error(
+            f'❌ No se encontraron datos para "{_eg}" {_ey}. Verificá el nombre del GP — '
+            'probá con el nombre completo en inglés (ej: "Canadian Grand Prix") '
+            'o revisá si el evento ya ocurrió.'
+        )
+    elif _ls == "connection_error":
+        st.error("❌ Error de conexión. Verificá tu conexión a internet e intentá nuevamente.")
+    elif _ls == "error":
         st.error("❌ No se pudo cargar el GP. Verificá el nombre.")
 
     if st.session_state.gp_loaded:
@@ -264,13 +304,40 @@ if st.session_state.gp_loaded:
         unsafe_allow_html=True,
     )
 else:
-    st.markdown(
-        '<h2 style="font-weight:800;letter-spacing:-0.5px;margin-bottom:1.5rem;">Consultor Técnico F1</h2>',
-        unsafe_allow_html=True,
-    )
-
-if not st.session_state.gp_loaded:
-    st.info("👈 Ingresá el nombre de un Gran Premio en el panel izquierdo para comenzar.")
+    st.markdown("""
+        <div style="padding: 3rem 0 2rem 0; max-width: 700px;">
+            <div style="font-size: 2.5rem; font-weight: 800; letter-spacing: -1px; margin-bottom: 0.75rem;">
+                Bienvenido a F1 Analyst Pro
+            </div>
+            <div style="font-size: 1rem; color: var(--color-text-secondary); margin-bottom: 2rem; line-height: 1.6;">
+                Tu asistente de análisis técnico de Fórmula 1. Analizá telemetría, ritmos de carrera,
+                estrategias de pit stop y mucho más — en lenguaje natural.
+            </div>
+            <div style="font-size: 0.8rem; font-weight: 600; letter-spacing: 1.5px; color: #555; margin-bottom: 1rem;">
+                EJEMPLOS DE PREGUNTAS
+            </div>
+            <ul style="list-style: none; padding: 0; margin: 0 0 2rem 0; display: flex; flex-direction: column; gap: 8px;">
+                <li style="background: var(--color-background-secondary); border: 1px solid #222; border-radius: 8px; padding: 10px 14px; font-size: 0.88rem; color: var(--color-text-secondary);">
+                    💬 &ldquo;¿Quién tuvo mejor ritmo en la carrera, Verstappen o Hamilton?&rdquo;
+                </li>
+                <li style="background: var(--color-background-secondary); border: 1px solid #222; border-radius: 8px; padding: 10px 14px; font-size: 0.88rem; color: var(--color-text-secondary);">
+                    💬 &ldquo;Mostrá la comparativa de sectores en clasificación&rdquo;
+                </li>
+                <li style="background: var(--color-background-secondary); border: 1px solid #222; border-radius: 8px; padding: 10px 14px; font-size: 0.88rem; color: var(--color-text-secondary);">
+                    💬 &ldquo;¿Cómo fue la degradación de neumáticos en el stint largo de Ferrari?&rdquo;
+                </li>
+                <li style="background: var(--color-background-secondary); border: 1px solid #222; border-radius: 8px; padding: 10px 14px; font-size: 0.88rem; color: var(--color-text-secondary);">
+                    💬 &ldquo;¿Qué equipos ganaron posiciones con los pit stops?&rdquo;
+                </li>
+            </ul>
+            <div style="background: #0f1a2a; border: 1px solid #1a2e4a; border-radius: 10px; padding: 14px 18px; display: flex; align-items: center; gap: 12px;">
+                <div style="font-size: 1.4rem;">👈</div>
+                <div style="font-size: 0.88rem; color: #60a5fa; line-height: 1.5;">
+                    Escribí el nombre de un GP en el panel izquierdo y hacé click en <strong>Cargar GP</strong>
+                </div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
     st.stop()
 
 # Render chat history

@@ -1,6 +1,7 @@
 import fastf1
 from core.config import CACHE_DIR
 from core.data_extractor import get_session_data
+from core.gp_resolver import GPNotFoundError
 from core.logger import get_logger
 
 _log = get_logger(__name__)
@@ -13,7 +14,10 @@ def _get_event(year: int, gp_name: str):
     if key not in _event_cache:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         fastf1.Cache.enable_cache(str(CACHE_DIR))
-        _event_cache[key] = fastf1.get_event(year, gp_name)
+        try:
+            _event_cache[key] = fastf1.get_event(year, gp_name)
+        except ValueError as e:
+            raise GPNotFoundError(str(e)) from e
     return _event_cache[key]
 
 
@@ -43,6 +47,8 @@ def _get_sessions(gp_name: str, year: int = 2026) -> list[str]:
         event = _get_event(year, gp_name)
         names = [event.get_session_name(i) for i in range(1, 6)]
         return [_NAME_TO_CODE[n] for n in names if n in _NAME_TO_CODE]
+    except GPNotFoundError:
+        raise
     except Exception:
         return _fallback_sessions(gp_name, year)
 
