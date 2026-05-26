@@ -4,6 +4,7 @@
 
 **Note:** All agent responses and the user interface are in Spanish, as the tool is designed for Spanish-speaking journalists and analysts.
 
+[![Version](https://img.shields.io/badge/version-1.1.0-blue)](https://github.com/luc45hn/f1-analyst-pro)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.x-red)](https://streamlit.io/)
 [![Claude](https://img.shields.io/badge/Claude-Sonnet%204.6-orange)](https://anthropic.com/)
@@ -20,6 +21,7 @@ Typical queries include:
 - "Compare Colapinto vs Gasly across all sessions this weekend"
 - "What was the impact of the Safety Car on tyre strategies?"
 - "Compare qualifying pace between Suzuka 2025 and 2026 — what changed with the new regulations?"
+- "Show me the telemetry trace for Colapinto in Sprint Qualifying"
 
 ---
 
@@ -34,7 +36,8 @@ Typical queries include:
 ┌────────────────────────▼────────────────────────────────┐
 │                     Agent Layer                          │
 │   consultant_agent.py  ·  gp_resolver.py                 │
-│   weekend_detector.py  ·  core/config.py                 │
+│   weekend_detector.py  ·  driver_resolver.py             │
+│   core/config.py       ·  core/logger.py                 │
 └────────────────────────┬────────────────────────────────┘
                          │
 ┌────────────────────────▼────────────────────────────────┐
@@ -48,6 +51,7 @@ Typical queries include:
 │  Official FOM data  │     │  claude-sonnet-4-6          │
 │  Laps · Sectors     │     │  Reasoning · Narrative      │
 │  Results · Stints   │     │  Prompt Caching enabled     │
+│  Telemetry channels │     │                            │
 └─────────────────────┘     └────────────────────────────┘
 ```
 
@@ -59,22 +63,23 @@ Typical queries include:
 | File | Responsibility |
 |---|---|
 | `app.py` | Streamlit UI — login screen, chat interface, sidebar menu, chart rendering, session state management |
-| `core/chart_builder.py` | Plotly chart generation — lap times, sector comparisons, tyre degradation, pit stop strategy |
+| `core/chart_builder.py` | Plotly chart generation — lap times, sector comparisons, tyre degradation, pit stop strategy, telemetry traces |
 
 ### Agent
 | File | Responsibility |
 |---|---|
-| `core/consultant_agent.py` | RAG orchestrator — intent detection, context builder, Claude API calls, prompt caching, cost logging |
+| `core/consultant_agent.py` | RAG orchestrator — intent detection, context builder, Claude API calls, prompt caching, cost logging, query analytics |
 | `core/gp_resolver.py` | Parses user input into `(gp_name, year)` — handles partial names, accented characters, defaults to 2026 |
-| `core/weekend_detector.py` | Detects weekend format (normal vs sprint) and returns the list of ingestable sessions |
-| `core/config.py` | Central configuration — env vars, model constants, predefined analyses list |
+| `core/weekend_detector.py` | Detects weekend format (normal vs sprint) dynamically via FastF1 — no hardcoded lists |
+| `core/driver_resolver.py` | Dynamic driver name → code mapping from FastF1 — handles mid-season replacements automatically |
+| `core/config.py` | Central configuration — env vars, model constants, predefined analyses list, app version |
 | `core/logger.py` | Structured logging — console (INFO) + rotating file (DEBUG, 5MB × 3), token/cost metrics |
 
 ### Data
 | File | Responsibility |
 |---|---|
 | `core/data_extractor.py` | FastF1 ingestion pipeline — extracts laps, sectors, results, stints, track status, DNF reasons |
-| `core/database_manager.py` | PostgreSQL interface — all read/write operations, aggregation queries, team lineup inference |
+| `core/database_manager.py` | PostgreSQL interface — all read/write operations, aggregation queries, team lineup inference, query analytics logging |
 | `supabase/migrations/` | Schema versioning — SQL migration files to run manually in the Supabase SQL Editor |
 
 ---
@@ -87,10 +92,11 @@ Typical queries include:
 | UI Framework | Streamlit | Web interface without JS/HTML |
 | LLM | Claude Sonnet 4.6 (Anthropic) | Natural language reasoning |
 | F1 Data | FastF1 | Official FOM telemetry wrapper |
-| Database | PostgreSQL (Supabase) | Persistent lap and results storage |
+| Database | PostgreSQL (Supabase) | Persistent lap, results and analytics storage |
 | Auth | Supabase Auth | Per-user authentication |
-| Charts | Plotly | Interactive race strategy visualizations |
+| Charts | Plotly | Interactive race strategy and telemetry visualizations |
 | Hosting | Streamlit Cloud | Zero-infrastructure deployment |
+| Testing | pytest + pytest-mock | Unit test suite |
 | Version Control | GitHub | Source + schema migrations |
 
 ---
@@ -103,13 +109,14 @@ FastF1 API
     ▼
 data_extractor.py
     │  Fetches session data (laps, results, weather)
-    │  Filters: removes NaT sectors, pit-in/pit-out laps
-    │  Transforms: Timedelta → float seconds, adds stint/track_status
+    │  Filters: removes NaT sectors, null positions, pit-in/pit-out laps
+    │  Transforms: Timedelta → float seconds, adds stint/track_status/DNF status
+    │  Weekend format detected dynamically (normal vs sprint) via FastF1
     │
     ▼
 database_manager.py
     │  INSERT ... ON CONFLICT DO NOTHING (idempotent)
-    │  Tables: sessions · laps · results · qualy_results
+    │  Tables: sessions · laps · results · qualy_results · queries
     │
     ▼
 PostgreSQL (Supabase)
@@ -121,24 +128,30 @@ consultant_agent.py
     │   · get_stint_summary()        → ~50 rows  (vs 1000 raw laps)
     │   · get_best_lap_per_driver()  → 1 row/driver
     │   · get_top_laps_per_driver()  → top 10/driver via window function
+    │  Telemetry fetched on-demand from FastF1 (not stored in DB)
     │
     ▼
 Claude Sonnet 4.6
-    │  Prompt caching on static context (90% token reduction on follow-up queries)
+    │  Prompt caching on static context (~80% token reduction on follow-up queries)
     │
     ▼
 Streamlit UI
+    │
+    ▼
+queries table (Supabase)
+       Logs every query: prompt, intent, tokens, cost, user
 ```
 
 ---
 
 ## RAG Design
 
-The agent uses a **intent-based context routing** strategy rather than sending all available data on every query:
+The agent uses an **intent-based context routing** strategy rather than sending all available data on every query:
 
 - `wants_qualy` → loads Q1/Q2/Q3 or SQ best laps + results
 - `wants_race` → loads stint summary + classification + best laps per driver
 - `wants_sprint` → loads SS/SQ data, always includes Q for cross-session comparisons
+- `wants_telemetry` → fetches car data directly from FastF1 on-demand, pre-generates Plotly chart before API call
 - `is_comparative` → loads all sessions (enables prompt caching)
 - `load_all` → full context with `cache_control: ephemeral` for Anthropic prompt caching
 
@@ -158,7 +171,49 @@ The agent uses a **intent-based context routing** strategy rather than sending a
 | Normal | FP1 · FP2 · FP3 · Q · R |
 | Sprint | FP1 · SQ · SS · Q · R |
 
-The system auto-detects the format via `weekend_detector.py` and adapts the sidebar menu and agent context accordingly.
+The system auto-detects the format dynamically via FastF1 — no hardcoded lists. Handles incomplete weekends gracefully: if a session has not taken place yet, it is skipped without error and the agent acknowledges data unavailability without assuming whether the session occurred.
+
+---
+
+## Telemetry Visualization
+
+The system supports lap telemetry traces with up to 2 drivers overlaid on the same chart:
+
+- **Speed** (km/h) — identifies braking zones, apexes, and top speed
+- **Throttle** (%) — reveals full-gas phases and traction management
+- **Brake** — shows braking points and intensity
+- **Gear** — complements speed and braking readings
+
+Driver names are resolved dynamically from FastF1 (e.g. "Colapinto" → `COL`), handling mid-season replacements automatically. Telemetry data is fetched on-demand from FastF1 and not stored in the database.
+
+---
+
+## Usage Analytics
+
+Every query is logged to a `queries` table in Supabase with:
+- User email, GP name, year, prompt text
+- Intent flags (wants_qualy, wants_race, wants_sprint, wants_telemetry)
+- Whether a chart was generated
+- Token counts (input, output), cost in USD, elapsed time
+
+This enables future optimization based on real usage patterns.
+
+---
+
+## Testing
+
+```bash
+venv/bin/python -m pytest tests/ -v
+```
+
+| Test file | Coverage | Tests |
+|---|---|---|
+| `test_gp_resolver.py` | `parse_gp_input` — name parsing, year extraction, accents | 5 |
+| `test_intent_detection.py` | `detect_intent` — all intent flags | 5 |
+| `test_weekend_detector.py` | Format detection, session lists, fallback | 5 |
+| `test_driver_resolver.py` | Name→code mapping, cache, error handling | 5 |
+| `test_database_manager.py` | CRUD operations, idempotency (in-memory SQLite) | 5 |
+| **Total** | | **25** |
 
 ---
 
@@ -197,18 +252,23 @@ SUPABASE_DB_URL=postgresql://postgres.xxx:password@pooler.supabase.com:6543/post
 
 ### Database setup
 
-Run the migration SQL in your Supabase SQL Editor:
+Run each migration file in order in your Supabase SQL Editor:
 
 ```bash
-cat supabase/migrations/001_initial_schema.sql
+cat supabase/migrations/001_initial_schema.sql  # tables + RLS policies
+cat supabase/migrations/002_queries_table.sql   # analytics table
 ```
-
-The RLS policies are included in `001_initial_schema.sql` and are applied in the same step.
 
 ### Run
 
 ```bash
 streamlit run app.py
+```
+
+### Run tests
+
+```bash
+venv/bin/python -m pytest tests/ -v
 ```
 
 ---
@@ -230,6 +290,8 @@ SUPABASE_DB_URL = "postgresql://..."
 
 5. Deploy — first load of each GP will re-download FastF1 cache (~30–60s). Subsequent queries are fast.
 
+**Note:** FastF1 cache is not persistent on Streamlit Cloud and resets on each reboot. Telemetry requests on the first load of a session will take ~10s while data downloads.
+
 ---
 
 ## User Management
@@ -239,6 +301,7 @@ Users are managed via **Supabase Authentication**:
 - The app uses email + password login
 - Sessions expire automatically; users are redirected to login on expiry
 - All database access is protected by Row Level Security (RLS)
+- Developer toolbar options are hidden from non-admin users automatically (Streamlit `toolbarMode: auto`)
 
 ---
 
@@ -250,6 +313,8 @@ Logs are written to `logs/f1_analyst.log` (excluded from git) and to the console
 INFO [consultant_agent] API call | GP=Suzuka sessions=['Q', 'R'] input=13 output=1955 cache_write=12642 cache_read=0 cost=$0.0294 elapsed=33.98s
 ```
 
+On Streamlit Cloud, logs are accessible via **Manage app → Logs** in the dashboard.
+
 ---
 
 ## Project Structure
@@ -259,17 +324,28 @@ f1-analyst-pro/
 ├── app.py                          # Streamlit entry point
 ├── core/
 │   ├── consultant_agent.py         # RAG agent + Claude API
-│   ├── chart_builder.py            # Plotly visualizations
+│   ├── chart_builder.py            # Plotly visualizations + telemetry traces
 │   ├── data_extractor.py           # FastF1 ingestion
-│   ├── database_manager.py         # PostgreSQL interface
-│   ├── weekend_detector.py         # Format detection
+│   ├── database_manager.py         # PostgreSQL interface + query analytics
+│   ├── weekend_detector.py         # Dynamic format detection via FastF1
+│   ├── driver_resolver.py          # Dynamic driver name → code mapping
 │   ├── gp_resolver.py              # Input parsing
-│   ├── config.py                   # Central configuration
+│   ├── config.py                   # Central configuration + APP_VERSION
 │   └── logger.py                   # Structured logging
+├── tests/
+│   ├── conftest.py                 # Shared fixtures (in-memory DB)
+│   ├── test_gp_resolver.py
+│   ├── test_intent_detection.py
+│   ├── test_weekend_detector.py
+│   ├── test_driver_resolver.py
+│   └── test_database_manager.py
 ├── supabase/
-│   └── migrations/                 # Schema versioning
+│   └── migrations/
+│       ├── 001_initial_schema.sql  # Core tables + RLS
+│       └── 002_queries_table.sql   # Analytics table
 ├── .env.example                    # Environment template
 ├── requirements.txt
+├── pytest.ini
 └── .streamlit/
     └── config.toml                 # Dark theme
 ```
@@ -279,10 +355,11 @@ f1-analyst-pro/
 ## Roadmap
 
 - [ ] FP1/FP2/FP3 ingestion and analysis
-- [ ] Sector-level telemetry overlays (speed traces)
 - [ ] Automatic post-race report generation (PDF export)
 - [ ] Multi-season constructor championship tracking
 - [ ] Push notifications for new GP data availability
+- [ ] Telemetry data persistence in DB (pending usage data analysis)
+- [ ] CI/CD pipeline with automated test runs on push
 
 ---
 
