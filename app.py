@@ -394,14 +394,20 @@ if prompt_to_send:
 
     with st.chat_message("assistant", avatar="📊"):
         try:
-            with st.spinner("Analizando datos..."):
+            _status = st.empty()
+            _status.info("🔍 Analizando datos del GP...")
+            def _update_status(msg):
+                _status.info(msg)
+            with st.spinner("Procesando..."):
                 result = st.session_state.agent.send_message(
                     prompt_to_send,
                     st.session_state.gp_loaded,
                     st.session_state.year,
                     compare_previous_year=st.session_state.compare_previous_year,
                     user_email=_user_email,
+                    on_status=_update_status,
                 )
+            _status.empty()
             st.markdown(result["text"])
             if result["chart"] is not None:
                 st.plotly_chart(result["chart"], width="stretch", key=f"chart_{len(st.session_state.messages)}")

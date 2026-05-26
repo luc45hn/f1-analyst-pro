@@ -29,7 +29,7 @@ class F1ConsultantAgent:
         self.client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         self.db = F1Database()
 
-    def send_message(self, prompt, gp_name, year: int = DEFAULT_YEAR, compare_previous_year: bool = False, user_email: str = ""):
+    def send_message(self, prompt, gp_name, year: int = DEFAULT_YEAR, compare_previous_year: bool = False, user_email: str = "", on_status=None):
         prompt_lower = unicodedata.normalize("NFD", prompt.lower()).encode("ascii", "ignore").decode()
 
         wants_qualy  = any(w in prompt_lower for w in ["clasif", "qualy", "qualifying", "pole", "q1", "q2", "q3", "grid"])
@@ -234,6 +234,8 @@ class F1ConsultantAgent:
                     _tel_drivers = []
                 logger.debug("telemetry | final drivers=%s session_type=%s", _tel_drivers, _stype)
                 if _tel_drivers:
+                    if on_status:
+                        on_status("📡 Descargando telemetría de FastF1... (puede tardar ~10s)")
                     pre_chart = plot_telemetry_trace(None, gp_name, year, _tel_drivers, _stype)
                     if pre_chart is not None:
                         logger.debug("pre_chart OK | drivers=%s session=%s", _tel_drivers, _stype)
@@ -248,6 +250,8 @@ class F1ConsultantAgent:
             except Exception:
                 logger.warning("telemetry chart failed pre-API | gp=%s", gp_name)
 
+        if on_status:
+            on_status("🤖 Generando análisis...")
         logger.debug("user_content (primeros 200 chars) | %s", user_content[:200])
         t0 = time.time()
         for attempt in range(3):
