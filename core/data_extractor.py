@@ -22,7 +22,7 @@ def get_session_data(year, gp_name, session_type="R"):
         ff1_identifier = _FASTF1_SESSION_MAP.get(session_type, session_type)
         session = fastf1.get_session(year, gp_name, ff1_identifier)
         logger.info("Loading session data (telemetry, weather) | %s %s %s", year, gp_name, session_type)
-        session.load(telemetry=True, weather=True, messages=False)
+        session.load(laps=True, telemetry=True, weather=True, messages=False)
 
         actual_year = session.event["EventDate"].year
         if actual_year != year:
@@ -37,7 +37,7 @@ def get_session_data(year, gp_name, session_type="R"):
         for driver_number in session.drivers:
             driver_laps = session.laps.pick_drivers(driver_number)
             if not driver_laps.empty:
-                for index, lap in driver_laps.iterlaps():
+                for _, lap in driver_laps.iterlaps():
                     lap_time_seconds = lap["LapTime"].total_seconds() if pd.notna(lap["LapTime"]) else None
                     s1_time_seconds  = lap["Sector1Time"].total_seconds() if pd.notna(lap["Sector1Time"]) else None
                     s2_time_seconds  = lap["Sector2Time"].total_seconds() if pd.notna(lap["Sector2Time"]) else None
