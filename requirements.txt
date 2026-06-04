@@ -10,3 +10,4 @@ supabase
 sqlalchemy
 pytest
 pytest-mock
+streamlit-local-storage

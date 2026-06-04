@@ -1,6 +1,7 @@
 import re
 import time
 import streamlit as st
+from streamlit_local_storage import LocalStorage
 from supabase import create_client
 from core.consultant_agent import F1ConsultantAgent
 from core.database_manager import F1Database
@@ -50,13 +51,27 @@ for key, default in [
 
 # ── Auth gate ─────────────────────────────────────────────────────────────────
 _sb = create_client(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY)
+local_storage = LocalStorage()
 
-# Expire check: clear session if token has expired
-if st.session_state.supabase_session:
-    if st.session_state.supabase_session.expires_at < int(time.time()):
-        _sb.auth.sign_out()
-        st.session_state.session_expired = True
-        st.session_state.supabase_session = None
+# logged_out flag: limpiar localStorage y rerun antes de mostrar el form
+if st.session_state.get("logged_out"):
+    del st.session_state["logged_out"]
+    local_storage.deleteItem("f1_session")
+    st.rerun()
+
+# Restaurar sesión desde localStorage si no está en session_state
+if not st.session_state.supabase_session:
+    try:
+        _stored = local_storage.getItem("f1_session")
+        if _stored and isinstance(_stored, dict):
+            _at = _stored.get("access_token")
+            _rt = _stored.get("refresh_token")
+            if _at and _rt:
+                _resp = _sb.auth.set_session(_at, _rt)
+                if _resp.session:
+                    st.session_state.supabase_session = _resp.session
+    except Exception:
+        _log.warning("No se pudo restaurar sesión desde localStorage")
 
 if not st.session_state.supabase_session:
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -90,6 +105,10 @@ if not st.session_state.supabase_session:
             try:
                 resp = _sb.auth.sign_in_with_password({"email": email, "password": password})
                 st.session_state.supabase_session = resp.session
+                local_storage.setItem("f1_session", {
+                    "access_token": resp.session.access_token,
+                    "refresh_token": resp.session.refresh_token,
+                })
                 st.session_state.auth_error = None
                 st.session_state.session_expired = False
                 _log.info("login success | email=%s", email)
@@ -240,9 +259,14 @@ with st.sidebar:
     )
     if st.button("Cerrar sesión", width="stretch", key="btn_logout"):
         _log.info("logout | email=%s", _user_email)
-        _sb.auth.sign_out()
+        try:
+            _sb.auth.sign_out()
+        except Exception:
+            pass
+        local_storage.deleteItem("f1_session")
         for k in list(st.session_state.keys()):
             del st.session_state[k]
+        st.session_state["logged_out"] = True
         st.rerun()
 
 # ── Main area ─────────────────────────────────────────────────────────────────
