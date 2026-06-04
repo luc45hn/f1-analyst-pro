@@ -26,6 +26,10 @@ for key, default in [
     ("session_expired", False),
     ("messages", []),
     ("gp_loaded", None),
+    ("loading_gp", False),
+    ("_pending_gp_name", None),
+    ("_pending_gp_year", DEFAULT_YEAR),
+    ("_pending_gp_input_raw", ""),
     ("weekend_type", None),
     ("agent", None),
     ("pending_prompt", None),
@@ -125,53 +129,16 @@ with st.sidebar:
         gp_name, year = gp_input.strip(), DEFAULT_YEAR  # fallback para mensajes de error
         try:
             gp_name, year = parse_gp_input(gp_input)
-            db = F1Database()
-            _t0_load = time.time()
-            with st.spinner("⏳ Descargando telemetría..."):
-                ok, n_loaded, n_total = ensure_sessions_loaded(gp_name, db, year)
-            if ok:
-                _log.info("GP loaded | gp=%s year=%d sessions=%d/%d elapsed=%.1fs",
-                          gp_name, year, n_loaded, n_total, time.time() - _t0_load)
-                _official = _get_event(year, gp_name).get("EventName", "").strip() or gp_name
-                st.session_state.gp_loaded = gp_name
-                st.session_state.gp_display = _official
-                st.session_state.gp_input_raw = gp_input.strip()
-                st.session_state.year = year
-                st.session_state.compare_previous_year = False
-                st.session_state.weekend_type = detect_weekend_type(gp_name, year)
-                st.session_state.agent = F1ConsultantAgent()
-                st.session_state.messages = []
-                st.session_state.load_status = "ok"
-                st.session_state.sessions_available = get_session_display_names(gp_name, year)
-                st.session_state.sessions_load_summary = f"{n_loaded} de {n_total}"
-                st.session_state.sessions_db_status = {
-                    code: db.session_exists(year, gp_name, code)
-                    for code, _ in st.session_state.sessions_available
-                }
-            else:
-                st.session_state.load_status = "no_data"
-                st.session_state.load_error_gp = gp_name
-                st.session_state.load_error_year = year
-                st.session_state.gp_loaded = None
-                st.session_state.gp_display = None
-                st.session_state.year = DEFAULT_YEAR
+            st.session_state._pending_gp_name = gp_name
+            st.session_state._pending_gp_year = year
+            st.session_state._pending_gp_input_raw = gp_input.strip()
+            st.session_state.loading_gp = True
+            st.rerun()
         except GPNotFoundError:
             _log.warning("GP not found | input=%r", gp_input)
             st.session_state.load_status = "not_found"
             st.session_state.load_error_gp = gp_name
             st.session_state.load_error_year = year
-            st.session_state.gp_loaded = None
-            st.session_state.gp_display = None
-            st.session_state.year = DEFAULT_YEAR
-        except (ConnectionError, TimeoutError, OSError):
-            _log.exception("GP load connection error | input=%r", gp_input)
-            st.session_state.load_status = "connection_error"
-            st.session_state.gp_loaded = None
-            st.session_state.gp_display = None
-            st.session_state.year = DEFAULT_YEAR
-        except Exception:
-            _log.exception("GP load failed | input=%r", gp_input)
-            st.session_state.load_status = "error"
             st.session_state.gp_loaded = None
             st.session_state.gp_display = None
             st.session_state.year = DEFAULT_YEAR
@@ -290,7 +257,60 @@ st.markdown("""
 }
 </style>
 """, unsafe_allow_html=True)
-if st.session_state.gp_loaded:
+if st.session_state.loading_gp:
+    _loading_ph = st.empty()
+    with _loading_ph.container():
+        with st.spinner("⏳ Cargando datos del GP..."):
+            _gp_name = st.session_state._pending_gp_name
+            _year    = st.session_state._pending_gp_year
+            try:
+                db = F1Database()
+                _t0_load = time.time()
+                ok, n_loaded, n_total = ensure_sessions_loaded(_gp_name, db, _year)
+                if ok:
+                    _log.info("GP loaded | gp=%s year=%d sessions=%d/%d elapsed=%.1fs",
+                              _gp_name, _year, n_loaded, n_total, time.time() - _t0_load)
+                    _official = _get_event(_year, _gp_name).get("EventName", "").strip() or _gp_name
+                    st.session_state.gp_loaded            = _gp_name
+                    st.session_state.gp_display           = _official
+                    st.session_state.gp_input_raw         = st.session_state._pending_gp_input_raw
+                    st.session_state.year                 = _year
+                    st.session_state.compare_previous_year = False
+                    st.session_state.weekend_type         = detect_weekend_type(_gp_name, _year)
+                    st.session_state.agent                = F1ConsultantAgent()
+                    st.session_state.messages             = []
+                    st.session_state.load_status          = "ok"
+                    st.session_state.sessions_available   = get_session_display_names(_gp_name, _year)
+                    st.session_state.sessions_load_summary = f"{n_loaded} de {n_total}"
+                    st.session_state.sessions_db_status   = {
+                        code: db.session_exists(_year, _gp_name, code)
+                        for code, _ in st.session_state.sessions_available
+                    }
+                    st.session_state.loading_gp = False
+                else:
+                    st.session_state.load_status     = "no_data"
+                    st.session_state.load_error_gp   = _gp_name
+                    st.session_state.load_error_year = _year
+                    st.session_state.gp_loaded       = None
+                    st.session_state.gp_display      = None
+                    st.session_state.year            = DEFAULT_YEAR
+                    st.session_state.loading_gp      = False
+            except (ConnectionError, TimeoutError, OSError):
+                _log.exception("GP load connection error | gp=%r year=%d", _gp_name, _year)
+                st.session_state.load_status  = "connection_error"
+                st.session_state.gp_loaded    = None
+                st.session_state.gp_display   = None
+                st.session_state.year         = DEFAULT_YEAR
+                st.session_state.loading_gp   = False
+            except Exception:
+                _log.exception("GP load failed | gp=%r year=%d", _gp_name, _year)
+                st.session_state.load_status  = "error"
+                st.session_state.gp_loaded    = None
+                st.session_state.gp_display   = None
+                st.session_state.year         = DEFAULT_YEAR
+                st.session_state.loading_gp   = False
+    st.rerun()
+elif st.session_state.gp_loaded:
     wtype        = st.session_state.weekend_type
     format_codes = ["FP1", "SQ", "SS", "Q", "R"] if wtype == "sprint" else ["FP1", "FP2", "FP3", "Q", "R"]
     _db_status = st.session_state.sessions_db_status
