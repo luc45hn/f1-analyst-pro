@@ -327,6 +327,43 @@ if st.session_state.gp_loaded:
         f'</div></div>',
         unsafe_allow_html=True,
     )
+
+    _gp_label = st.session_state.gp_display or st.session_state.gp_loaded
+    with st.expander("💡 ¿Cómo usar F1 Analyst Pro?", expanded=False):
+        st.markdown("#### Ejemplos de preguntas")
+        if wtype == "sprint":
+            _q1 = f"¿Cómo le fue a [piloto] en la Sprint Qualifying en {_gp_label}?"
+            _q4 = "Mostrame la telemetría de [piloto] en la Sprint Qualifying"
+        else:
+            _q1 = f"¿Cuál fue la pole y por cuánto en {_gp_label}?"
+            _q4 = "Mostrame la telemetría de [piloto] en la clasificación"
+        st.markdown(f"""
+- {_q1}
+- Comparame el ritmo de carrera de los dos [equipo]
+- ¿Qué estrategia usaron los top 5 en carrera?
+- {_q4}
+""")
+        st.markdown("#### Tips")
+        st.markdown("""
+- Usá nombres completos o códigos de 3 letras: ej. Colapinto o COL
+- Para telemetría mencioná la sesión: telemetría de COL en la Sprint Qualifying
+- Podés comparar con el año anterior usando el botón de abajo en el panel
+""")
+        st.markdown("#### Capacidades")
+        _col_yes, _col_no = st.columns(2)
+        with _col_yes:
+            st.markdown("""**✅ Puede hacer**
+- Clasificación
+- Carrera
+- Estrategias
+- Telemetría
+- Comparativas entre años""")
+        with _col_no:
+            st.markdown("""**❌ No puede hacer**
+- Datos en tiempo real
+- Predicciones
+- Info fuera de la sesión""")
+
 else:
     st.markdown("""
         <div style="padding: 3rem 0 2rem 0; max-width: 700px;">
