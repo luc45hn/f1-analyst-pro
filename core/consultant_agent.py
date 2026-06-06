@@ -52,9 +52,13 @@ class F1ConsultantAgent:
         wants_telemetry = any(w in prompt_lower for w in [
             "telemetria", "trace", "acelerador",
             "freno", "frenar", "clipping", "throttle", "brake",
+            "aceleracion", "aceleraciones", "frenada", "frenadas",
+            "velocidad", "canal", "canales", "grafica", "grafico",
         ])
-        logger.debug("intent | gp=%s wants_qualy=%s wants_race=%s wants_sprint=%s load_all=%s wants_telemetry=%s",
-                     gp_name, wants_qualy, wants_race, wants_sprint, load_all, wants_telemetry)
+        _qs = re.search(r'\b(q[123])\b', prompt_lower)
+        qualifying_segment = _qs.group(1).upper() if _qs else None
+        logger.debug("intent | gp=%s wants_qualy=%s wants_race=%s wants_sprint=%s load_all=%s wants_telemetry=%s qualifying_segment=%s",
+                     gp_name, wants_qualy, wants_race, wants_sprint, load_all, wants_telemetry, qualifying_segment)
 
         static_context  = f"Gran Premio: {gp_name} — Temporada {year}\n\n"
         missing_context = ""
@@ -246,7 +250,10 @@ class F1ConsultantAgent:
                 if _tel_drivers:
                     if on_status:
                         on_status("📡 Descargando telemetría de FastF1... (puede tardar ~10s)")
-                    pre_chart = plot_telemetry_trace(None, gp_name, year, _tel_drivers, _stype)
+                    pre_chart = plot_telemetry_trace(
+                        None, gp_name, year, _tel_drivers, _stype,
+                        qualifying_segment if _stype == "Q" else None,
+                    )
                     if pre_chart is not None:
                         logger.debug("pre_chart OK | drivers=%s session=%s", _tel_drivers, _stype)
                         user_content += (

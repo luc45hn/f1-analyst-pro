@@ -173,6 +173,7 @@ def plot_telemetry_trace(
     year: int,
     drivers: list[str],
     session_type: str = "Q",
+    qualifying_segment: str | None = None,
 ) -> go.Figure | None:
     import fastf1
     from core.config import CACHE_DIR
@@ -207,6 +208,10 @@ def plot_telemetry_trace(
             if drv_laps.empty:
                 _log.warning("telemetry | no laps for driver=%s", drv)
                 continue
+            if qualifying_segment:
+                _stint_map = {"Q1": 1, "Q2": 2, "Q3": 3}
+                _seg_laps = drv_laps[drv_laps["Stint"] == _stint_map[qualifying_segment]]
+                drv_laps = _seg_laps if not _seg_laps.empty else drv_laps
             lap = drv_laps.loc[drv_laps["LapTime"].idxmin()]
             tel = lap.get_car_data().add_distance()
             _log.debug("telemetry | car_data OK | driver=%s points=%d", drv, len(tel))
