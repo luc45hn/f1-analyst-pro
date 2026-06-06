@@ -6,8 +6,20 @@ on:
   workflow_dispatch:
 
 jobs:
-  ping:
+  wake:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping app
-        run: curl -s -o /dev/null -w "%{http_code}" https://f1-analyst.streamlit.app
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Playwright
+        run: |
+          pip install playwright
+          playwright install chromium --with-deps
+
+      - name: Wake app
+        run: python .github/scripts/wake_app.py
