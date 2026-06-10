@@ -78,7 +78,7 @@ def get_session_display_names(gp_name: str, year: int = 2026) -> list[tuple[str,
     return [(c, _SESSION_LABELS.get(c, c)) for c in codes]
 
 
-_INGESTABLE = {"Q", "R", "SQ", "SS"}
+_INGESTABLE = {"FP1", "FP2", "FP3", "Q", "R", "SQ", "SS"}
 
 
 def ensure_sessions_loaded(gp_name: str, db, year: int = 2026) -> tuple[bool, int, int]:

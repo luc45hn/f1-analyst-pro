@@ -5,7 +5,7 @@ from streamlit_local_storage import LocalStorage
 from supabase import create_client
 from core.consultant_agent import F1ConsultantAgent
 from core.database_manager import F1Database
-from core.weekend_detector import detect_weekend_type, ensure_sessions_loaded, get_session_display_names, _get_event
+from core.weekend_detector import detect_weekend_type, ensure_sessions_loaded, get_session_display_names, _get_event, _get_sessions
 from core.config import PREDEFINED_ANALYSES, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, APP_VERSION, DAILY_COST_LIMIT_USD
 from core.gp_resolver import parse_gp_input, DEFAULT_YEAR, GPNotFoundError
 from core.logger import get_logger
@@ -283,10 +283,18 @@ st.markdown("""
 """, unsafe_allow_html=True)
 if st.session_state.loading_gp:
     _loading_ph = st.empty()
+    _gp_name = st.session_state._pending_gp_name
+    _year    = st.session_state._pending_gp_year
+    try:
+        _n_sessions = len(_get_sessions(_gp_name, _year))
+    except Exception:
+        _n_sessions = 5
+    _spinner_msg = (
+        f"⏳ Descargando {_n_sessions} sesiones de {_gp_name}... "
+        f"(puede tardar hasta {_n_sessions * 15}s la primera vez)"
+    )
     with _loading_ph.container():
-        with st.spinner("⏳ Cargando datos del GP..."):
-            _gp_name = st.session_state._pending_gp_name
-            _year    = st.session_state._pending_gp_year
+        with st.spinner(_spinner_msg):
             try:
                 db = F1Database()
                 _t0_load = time.time()

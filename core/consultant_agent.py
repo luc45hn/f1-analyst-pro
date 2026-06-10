@@ -46,9 +46,13 @@ class F1ConsultantAgent:
         wants_race   = any(w in prompt_lower for w in ["carrera", "race", "vuelta", "ritmo", "neumático",
                                                         "stint", "pit", "parada", "degradación", "top"])
         wants_sprint = any(w in prompt_lower for w in ["sprint", "sq", "ss"])
+        wants_practice = any(w in prompt_lower for w in [
+            "entrenamiento", "practica", "fp1", "fp2", "fp3",
+            "practice", "libre", "libres", "evolucion", "setup"
+        ])
         if wants_sprint and "sq" in prompt_lower:
             wants_qualy = True
-        load_all = not (wants_qualy or wants_race or wants_sprint)
+        load_all = not (wants_qualy or wants_race or wants_sprint or wants_practice)
         wants_telemetry = any(w in prompt_lower for w in [
             "telemetria", "trace", "acelerador",
             "freno", "frenar", "clipping", "throttle", "brake",
@@ -114,6 +118,20 @@ class F1ConsultantAgent:
                 top_sq = self.db.get_top_laps(sq_id).to_dict("records")
                 if top_sq:
                     static_context += "--- TOP 10 VUELTAS SPRINT QUALIFYING (SQ) ---\n" + str(top_sq) + "\n\n"
+
+        # --- ENTRENAMIENTOS (FP) ---
+        if wants_practice or load_all:
+            for fp_code, fp_label in [
+                ("FP1", "PRÁCTICA 1 (FP1)"),
+                ("FP2", "PRÁCTICA 2 (FP2)"),
+                ("FP3", "PRÁCTICA 3 (FP3)"),
+            ]:
+                fp_id = self.db.get_session_id(year, gp_name, fp_code)
+                if fp_id:
+                    sessions_in_context.append(fp_code)
+                    best_fp = self.db.get_best_lap_per_driver(fp_id).to_dict("records")
+                    if best_fp:
+                        static_context += f"--- {fp_label} ---\n" + str(best_fp) + "\n\n"
 
         # --- ALINEACIÓN ---
         lineup_sid = (self.db.get_session_id(year, gp_name, "R")
@@ -196,7 +214,9 @@ class F1ConsultantAgent:
             "Para solicitudes de telemetría, NUNCA verifiques si el piloto aparece en los datos de laps del contexto. "
             "La telemetría se obtiene directamente de FastF1 de forma independiente — simplemente indicá que vas a "
             "mostrar el gráfico y dejá que el sistema lo genere. No rechaces solicitudes de telemetría basándote "
-            "en la disponibilidad de datos en el contexto."
+            "en la disponibilidad de datos en el contexto. "
+            "Cuando analices sesiones de entrenamiento (FP1, FP2, FP3), enfocate en la evolución "
+            "de los tiempos entre sesiones y qué pilotos/equipos mostraron mayor progreso."
         )
 
         if load_all:
@@ -316,6 +336,7 @@ class F1ConsultantAgent:
                 "wants_qualy": wants_qualy,
                 "wants_race": wants_race,
                 "wants_sprint": wants_sprint,
+                "wants_practice": wants_practice,
                 "wants_telemetry": wants_telemetry,
                 "load_all": load_all,
             },

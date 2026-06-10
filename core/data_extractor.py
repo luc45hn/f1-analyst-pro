@@ -32,7 +32,10 @@ def get_session_data(year, gp_name, session_type="R"):
             )
 
         logger.debug("Generating technical summary | %s %s %s", year, gp_name, session_type)
-        results_data = session.results.to_dict("records")
+        if not session_type.startswith("FP"):
+            results_data = session.results.to_dict("records")
+        else:
+            results_data = []
 
         for driver_number in session.drivers:
             driver_laps = session.laps.pick_drivers(driver_number)
@@ -95,6 +98,8 @@ def get_session_data(year, gp_name, session_type="R"):
                 qualy_results_df["session_id"] = session_id
                 db.insert_qualy_results_data(session_id, qualy_results_df)
                 logger.info("%d sprint qualifying results saved | %s %s %s", len(qualy_results_df), year, gp_name, session_type)
+        elif session_type.startswith("FP"):
+            logger.debug("FP session — skipping results insert | %s %s %s", year, gp_name, session_type)
 
         try:
             weather_data = session.weather_data.iloc[0]
