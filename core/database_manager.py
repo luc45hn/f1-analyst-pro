@@ -438,6 +438,79 @@ class F1Database:
 
         return pd.DataFrame(rows, columns=_COLS)
 
+    def get_key_moments(self, session_id: int) -> pd.DataFrame:
+        laps = pd.read_sql_query(
+            text(
+                "SELECT driver, lap_number, lap_time, s1, s2, s3, position, "
+                "is_pit_in, is_personal_best, deleted, deleted_reason, track_status "
+                "FROM laps WHERE session_id = :sid ORDER BY driver, lap_number"
+            ),
+            self._engine,
+            params={"sid": session_id},
+        )
+        if laps.empty:
+            return pd.DataFrame(columns=["event_type", "driver", "lap_number"])
+
+        parts = []
+
+        # TRACK_LIMITS
+        if laps["deleted"].notna().any():
+            tl = laps[laps["deleted"] == True][
+                ["driver", "lap_number", "deleted_reason", "s1", "s2", "s3"]
+            ].copy()
+            if not tl.empty:
+                tl["event_type"] = "TRACK_LIMITS"
+                parts.append(tl)
+
+        # RITMO_ANOMALO: lap_time > mediana_piloto * 1.15, pista verde
+        green = laps[(laps["track_status"] == "1") & laps["lap_time"].notna()].copy()
+        if not green.empty:
+            medians = green.groupby("driver")["lap_time"].median().rename("ritmo_base")
+            green = green.join(medians, on="driver")
+            anomalas = green[green["lap_time"] > green["ritmo_base"] * 1.15][
+                ["driver", "lap_number", "lap_time", "ritmo_base"]
+            ].copy()
+            if not anomalas.empty:
+                anomalas["event_type"] = "RITMO_ANOMALO"
+                parts.append(anomalas)
+
+        # PERDIDA_POSICION: sube 3+ puestos sin pit in
+        if laps["position"].notna().any():
+            pos = laps[laps["position"].notna() & (laps["is_pit_in"] != True)].copy()
+            pos = pos.sort_values(["driver", "lap_number"])
+            pos["position_before"] = pos.groupby("driver")["position"].shift(1)
+            pos = pos[pos["position_before"].notna()].copy()
+            pos["delta"] = (pos["position"] - pos["position_before"]).astype(int)
+            perdidas = pos[pos["delta"] >= 3][
+                ["driver", "lap_number", "position_before", "position", "delta"]
+            ].copy()
+            perdidas = perdidas.rename(columns={"position": "position_after"})
+            perdidas["position_before"] = perdidas["position_before"].astype(int)
+            if not perdidas.empty:
+                perdidas["event_type"] = "PERDIDA_POSICION"
+                parts.append(perdidas)
+
+        # MEJOR_VUELTA: is_personal_best=True, pista verde, top 5 del campo
+        if laps["is_personal_best"].notna().any():
+            pb = laps[
+                (laps["is_personal_best"] == True)
+                & (laps["track_status"] == "1")
+                & laps["lap_time"].notna()
+            ][["driver", "lap_number", "lap_time"]].copy()
+            pb = pb.nsmallest(5, "lap_time")
+            if not pb.empty:
+                pb["event_type"] = "MEJOR_VUELTA"
+                parts.append(pb)
+
+        if not parts:
+            return pd.DataFrame(columns=["event_type", "driver", "lap_number"])
+
+        return (
+            pd.concat(parts, ignore_index=True)
+            .sort_values(["lap_number", "event_type"])
+            .reset_index(drop=True)
+        )
+
     def log_query(self, user_email, gp_name, year, prompt, intent,
                   has_chart, input_tokens, output_tokens, cost_usd, elapsed_seconds):
         try:

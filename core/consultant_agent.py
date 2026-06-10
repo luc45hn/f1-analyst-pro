@@ -111,6 +111,14 @@ class F1ConsultantAgent:
                             + _pit_df[[c for c in _pit_cols if c in _pit_df.columns]].to_string(index=False)
                             + "\n\n"
                         )
+                if wants_race or load_all:
+                    _km_df = self.db.get_key_moments(race_id)
+                    if not _km_df.empty:
+                        static_context += (
+                            "--- MOMENTOS CLAVE (R) ---\n"
+                            + _km_df.to_string(index=False)
+                            + "\n\n"
+                        )
             else:
                 missing_context += "[SIN DATOS: La sesión Race (R) no está disponible en la base de datos.]\n\n"
 
@@ -233,7 +241,10 @@ class F1ConsultantAgent:
             "de los tiempos entre sesiones y qué pilotos/equipos mostraron mayor progreso. "
             "Cuando tengas datos de undercut/overcut, presentá un veredicto claro por cada interacción relevante. "
             "Destacá las maniobras que cambiaron posiciones reales y explicá brevemente por qué funcionó o falló "
-            "en términos de estrategia."
+            "en términos de estrategia. "
+            "Cuando tengas datos de momentos clave, mencioná los más relevantes de forma proactiva "
+            "en tu análisis, especialmente track limits que afectaron resultados, caídas de ritmo "
+            "inexplicables y pérdidas bruscas de posición."
         )
 
         if load_all:
