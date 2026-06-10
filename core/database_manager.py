@@ -330,6 +330,114 @@ class F1Database:
     def get_all_sessions(self):
         return pd.read_sql_query(text("SELECT * FROM sessions"), self._engine)
 
+    def get_pit_stop_analysis(
+        self,
+        session_id: int,
+        position_window: int = 3,
+        lap_window: int = 5,
+    ) -> pd.DataFrame:
+        _COLS = [
+            "driver", "pit_lap", "compound_out", "compound_in",
+            "position_before", "rival", "rival_pit_lap", "stop_order",
+            "position_after", "rival_position_after", "delta_vs_rival", "verdict",
+        ]
+        laps = pd.read_sql_query(
+            text(
+                "SELECT driver, lap_number, position, compound, is_pit_in "
+                "FROM laps WHERE session_id = :sid ORDER BY driver, lap_number"
+            ),
+            self._engine,
+            params={"sid": session_id},
+        )
+        if laps.empty or laps["position"].isna().all():
+            return pd.DataFrame(columns=_COLS)
+
+        def _pos(driver: str, lap: int):
+            d_laps = laps[(laps["driver"] == driver) & laps["position"].notna()]
+            if d_laps.empty:
+                return None
+            exact = d_laps[d_laps["lap_number"] == lap]
+            if not exact.empty:
+                return int(exact.iloc[0]["position"])
+            idx = (d_laps["lap_number"] - lap).abs().idxmin()
+            return int(d_laps.loc[idx, "position"])
+
+        def _compound(driver: str, lap: int):
+            row = laps[(laps["driver"] == driver) & (laps["lap_number"] == lap)]
+            return row.iloc[0]["compound"] if not row.empty else None
+
+        pit_stops = laps[laps["is_pit_in"] == True].copy()
+        max_lap = int(laps["lap_number"].max())
+        rows = []
+
+        for _, stop in pit_stops.iterrows():
+            driver      = stop["driver"]
+            pit_lap     = int(stop["lap_number"])
+            pos_before  = _pos(driver, pit_lap)
+            if pos_before is None:
+                continue
+
+            compound_out = stop["compound"]
+            compound_in  = _compound(driver, pit_lap + 1)
+            best: dict | None = None
+
+            rival_stops = pit_stops[pit_stops["driver"] != driver]
+            for _, rstop in rival_stops.iterrows():
+                rival          = rstop["driver"]
+                rival_pit_lap  = int(rstop["lap_number"])
+                if abs(rival_pit_lap - pit_lap) > lap_window:
+                    continue
+                rival_pos_at_pit = _pos(rival, pit_lap)
+                if rival_pos_at_pit is None:
+                    continue
+                if abs(rival_pos_at_pit - pos_before) > position_window:
+                    continue
+
+                check_lap = max(pit_lap, rival_pit_lap) + 3
+                if check_lap > max_lap:
+                    continue
+                pos_after       = _pos(driver, check_lap)
+                rival_pos_after = _pos(rival, check_lap)
+                if pos_after is None or rival_pos_after is None:
+                    continue
+
+                delta = rival_pos_after - pos_after  # positive = gained on rival
+
+                if pit_lap < rival_pit_lap:
+                    stop_order = "FIRST"
+                    verdict    = "UNDERCUT EXITOSO" if pos_after < rival_pos_after else "UNDERCUT FALLIDO"
+                elif pit_lap > rival_pit_lap:
+                    stop_order = "SECOND"
+                    verdict    = "OVERCUT EXITOSO" if pos_after < rival_pos_after else "OVERCUT FALLIDO"
+                else:
+                    stop_order = "SAME"
+                    verdict    = "PARADA NEUTRAL"
+
+                if best is None or abs(delta) > abs(best["delta_vs_rival"]):
+                    best = {
+                        "driver": driver, "pit_lap": pit_lap,
+                        "compound_out": compound_out, "compound_in": compound_in,
+                        "position_before": pos_before, "rival": rival,
+                        "rival_pit_lap": rival_pit_lap, "stop_order": stop_order,
+                        "position_after": pos_after, "rival_position_after": rival_pos_after,
+                        "delta_vs_rival": delta, "verdict": verdict,
+                    }
+
+            if best is not None:
+                rows.append(best)
+            else:
+                rows.append({
+                    "driver": driver, "pit_lap": pit_lap,
+                    "compound_out": compound_out, "compound_in": compound_in,
+                    "position_before": pos_before, "rival": None,
+                    "rival_pit_lap": None, "stop_order": None,
+                    "position_after": _pos(driver, pit_lap + 3) if pit_lap + 3 <= max_lap else None,
+                    "rival_position_after": None, "delta_vs_rival": None,
+                    "verdict": "PARADA NEUTRAL",
+                })
+
+        return pd.DataFrame(rows, columns=_COLS)
+
     def log_query(self, user_email, gp_name, year, prompt, intent,
                   has_chart, input_tokens, output_tokens, cost_usd, elapsed_seconds):
         try:

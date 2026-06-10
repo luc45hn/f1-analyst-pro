@@ -50,9 +50,13 @@ class F1ConsultantAgent:
             "entrenamiento", "practica", "fp1", "fp2", "fp3",
             "practice", "libre", "libres", "evolucion", "setup"
         ])
+        wants_undercut = any(w in prompt_lower for w in [
+            "undercut", "overcut", "estrategia de pit", "parada",
+            "beneficio", "perjudico", "funciono la parada"
+        ])
         if wants_sprint and "sq" in prompt_lower:
             wants_qualy = True
-        load_all = not (wants_qualy or wants_race or wants_sprint or wants_practice)
+        load_all = not (wants_qualy or wants_race or wants_sprint or wants_practice or wants_undercut)
         wants_telemetry = any(w in prompt_lower for w in [
             "telemetria", "trace", "acelerador",
             "freno", "frenar", "clipping", "throttle", "brake",
@@ -83,7 +87,7 @@ class F1ConsultantAgent:
                 missing_context += "[SIN DATOS: La sesión Qualifying (Q) no está disponible en la base de datos.]\n\n"
 
         # --- CARRERA ---
-        if wants_race or load_all:
+        if wants_race or wants_undercut or load_all:
             race_id = self.db.get_session_id(year, gp_name, "R")
             if race_id:
                 sessions_in_context.append("R")
@@ -97,6 +101,16 @@ class F1ConsultantAgent:
                 race_data = self.db.get_stint_summary(race_id).to_dict("records")
                 if race_data:
                     static_context += "--- RESUMEN DE RITMO POR STINT EN CARRERA (R) ---\n" + str(race_data) + "\n\n"
+                if wants_undercut or wants_race or load_all:
+                    _pit_df = self.db.get_pit_stop_analysis(race_id)
+                    if not _pit_df.empty:
+                        _pit_cols = ["driver", "pit_lap", "compound_out", "compound_in",
+                                     "rival", "stop_order", "delta_vs_rival", "verdict"]
+                        static_context += (
+                            "--- ANÁLISIS DE UNDERCUT/OVERCUT ---\n"
+                            + _pit_df[[c for c in _pit_cols if c in _pit_df.columns]].to_string(index=False)
+                            + "\n\n"
+                        )
             else:
                 missing_context += "[SIN DATOS: La sesión Race (R) no está disponible en la base de datos.]\n\n"
 
@@ -216,7 +230,10 @@ class F1ConsultantAgent:
             "mostrar el gráfico y dejá que el sistema lo genere. No rechaces solicitudes de telemetría basándote "
             "en la disponibilidad de datos en el contexto. "
             "Cuando analices sesiones de entrenamiento (FP1, FP2, FP3), enfocate en la evolución "
-            "de los tiempos entre sesiones y qué pilotos/equipos mostraron mayor progreso."
+            "de los tiempos entre sesiones y qué pilotos/equipos mostraron mayor progreso. "
+            "Cuando tengas datos de undercut/overcut, presentá un veredicto claro por cada interacción relevante. "
+            "Destacá las maniobras que cambiaron posiciones reales y explicá brevemente por qué funcionó o falló "
+            "en términos de estrategia."
         )
 
         if load_all:
@@ -337,6 +354,7 @@ class F1ConsultantAgent:
                 "wants_race": wants_race,
                 "wants_sprint": wants_sprint,
                 "wants_practice": wants_practice,
+                "wants_undercut": wants_undercut,
                 "wants_telemetry": wants_telemetry,
                 "load_all": load_all,
             },
