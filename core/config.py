@@ -13,10 +13,10 @@ CACHE_DIR    = DATA_DIR / "raw"
 YEAR = int(os.getenv("YEAR", "2026"))
 
 # ── App ───────────────────────────────────────────────────────────────────────
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.3.0"
 
 # ── Usage limits ──────────────────────────────────────────────────────────────
-DAILY_COST_LIMIT_USD = 2.00
+DAILY_COST_LIMIT_USD = 3.00
 
 # ── Claude ────────────────────────────────────────────────────────────────────
 ANTHROPIC_MODEL      = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")

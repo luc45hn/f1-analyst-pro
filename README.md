@@ -4,7 +4,7 @@
 
 **Note:** All agent responses and the user interface are in Spanish, as the tool is designed for Spanish-speaking journalists and analysts.
 
-[![Version](https://img.shields.io/badge/version-1.2.0-blue)](https://github.com/luc45hn/f1-analyst-pro)
+[![Version](https://img.shields.io/badge/version-1.3.0-blue)](https://github.com/luc45hn/f1-analyst-pro)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.x-red)](https://streamlit.io/)
 [![Claude](https://img.shields.io/badge/Claude-Sonnet%204.6-orange)](https://anthropic.com/)
@@ -23,8 +23,26 @@ Typical queries include:
 - "Compare qualifying pace between Suzuka 2025 and 2026 — what changed with the new regulations?"
 - "Show me the telemetry trace for Colapinto in Sprint Qualifying"
 - "Mostrame el progreso de carga mientras se descarga la telemetría de FastF1"
+- "Did McLaren's undercut on Ferrari work?"
+- "Show me the key moments of the race"
+- "Note: Mercedes brought a new floor to this GP"
 
 The interface includes a welcome screen with example queries for first-time users, friendly error messages, and progressive status indicators during long operations.
+
+---
+
+## Key Features
+
+| Category | Capabilities |
+|---|---|
+| **Race analysis** | Final classification, race pace by driver, stint summary, constructor comparison |
+| **Strategy** | Undercut/overcut detection with EXITOSO/FALLIDO verdict, pit stop analysis |
+| **Key moments** | Automatic detection of track limits, pace anomalies (>15% off median), position drops |
+| **Telemetry** | Speed/throttle/brake/gear traces per driver, Q1/Q2/Q3 segment filtering |
+| **Practice sessions** | FP1/FP2/FP3 ingestion and lap time data |
+| **Export** | DOCX and PDF download inline in chat after each assistant response |
+| **Journalist notes** | Contextual notes via `Nota:` prefix in chat, persisted per session |
+| **Year comparison** | Side-by-side analysis of the same GP across seasons |
 
 ---
 
@@ -67,6 +85,7 @@ The interface includes a welcome screen with example queries for first-time user
 |---|---|
 | `app.py` | Streamlit UI — login screen, chat interface, sidebar menu, chart rendering, session state management |
 | `core/chart_builder.py` | Plotly chart generation — lap times, sector comparisons, tyre degradation, pit stop strategy, telemetry traces |
+| `core/export_manager.py` | DOCX and PDF export — formats chat responses as structured documents using python-docx and reportlab |
 
 ### Agent
 | File | Responsibility |
@@ -114,6 +133,7 @@ data_extractor.py
     │  Fetches session data (laps, results, weather)
     │  Filters: removes NaT sectors, null positions, pit-in/pit-out laps
     │  Transforms: Timedelta → float seconds, adds stint/track_status/DNF status
+    │  Extended lap fields: position, is_personal_best, speed_i1/i2/fl/st, deleted, deleted_reason
     │  Weekend format detected dynamically (normal vs sprint) via FastF1
     │
     ▼
@@ -200,6 +220,19 @@ Every query is logged to a `queries` table in Supabase with:
 - Token counts (input, output), cost in USD, elapsed time
 
 This enables future optimization based on real usage patterns.
+
+---
+
+## Journalist Notes
+
+The journalist can add contextual information that FastF1 doesn't have by typing in the chat with the `Nota:` prefix:
+
+```
+Nota: Mercedes brought a new floor to this GP
+Nota: Colapinto had brake issues in FP2 according to sources
+```
+
+Notes are stored in session state, reset when loading a new GP, and automatically included in the agent context under a `NOTAS DEL PERIODISTA` section.
 
 ---
 
@@ -395,8 +428,11 @@ f1-analyst-pro/
 ## Roadmap
 
 - [x] Daily cost limit per user (configurable, default $2.00/day)
-- [ ] FP1/FP2/FP3 ingestion and analysis
-- [ ] Automatic post-race report generation (PDF export)
+- [x] FP1/FP2/FP3 ingestion and analysis
+- [x] Sector-level telemetry overlays (speed traces)
+- [x] Automatic post-race report generation (PDF/DOCX export)
+- [x] Undercut/overcut analysis with verdict
+- [x] Journalist contextual notes via chat
 - [ ] Multi-season constructor championship tracking
 - [ ] Push notifications for new GP data availability
 - [ ] Telemetry data persistence in DB (pending usage data analysis)
