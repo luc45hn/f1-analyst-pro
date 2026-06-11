@@ -30,7 +30,7 @@ class F1ConsultantAgent:
         self.client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         self.db = F1Database()
 
-    def send_message(self, prompt, gp_name, year: int = DEFAULT_YEAR, compare_previous_year: bool = False, user_email: str = "", on_status=None):
+    def send_message(self, prompt, gp_name, year: int = DEFAULT_YEAR, compare_previous_year: bool = False, user_email: str = "", on_status=None, gp_notes: list = None):
         try:
             daily_cost = self.db.get_daily_cost(user_email, _date.today())
             if daily_cost >= DAILY_COST_LIMIT_USD:
@@ -69,6 +69,8 @@ class F1ConsultantAgent:
                      gp_name, wants_qualy, wants_race, wants_sprint, load_all, wants_telemetry, qualifying_segment)
 
         static_context  = f"Gran Premio: {gp_name} — Temporada {year}\n\n"
+        if gp_notes:
+            static_context += "--- NOTAS DEL PERIODISTA ---\n" + "\n".join(f"- {n}" for n in gp_notes) + "\n\n"
         missing_context = ""
         sessions_in_context = []
 

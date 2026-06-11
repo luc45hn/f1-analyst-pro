@@ -46,6 +46,7 @@ for key, default in [
     ("sessions_db_status", {}),
     ("gp_input_raw", ""),
     ("gp_display", None),
+    ("gp_notes", []),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -312,6 +313,7 @@ if st.session_state.loading_gp:
                     st.session_state.weekend_type         = detect_weekend_type(_gp_name, _year)
                     st.session_state.agent                = F1ConsultantAgent()
                     st.session_state.messages             = []
+                    st.session_state.gp_notes             = []
                     st.session_state.load_status          = "ok"
                     st.session_state.sessions_available   = get_session_display_names(_gp_name, _year)
                     st.session_state.sessions_load_summary = f"{n_loaded} de {n_total}"
@@ -401,6 +403,7 @@ elif st.session_state.gp_loaded:
 - Usá nombres completos o códigos de 3 letras: ej. Colapinto o COL
 - Para telemetría mencioná la sesión: telemetría de COL en la Sprint Qualifying
 - Podés comparar con el año anterior usando el botón de abajo en el panel
+- Podés agregar contexto escribiendo: "Nota: Mercedes trajo fondo plano nuevo a este GP"
 """)
         st.markdown("#### Capacidades")
         _col_yes, _col_no = st.columns(2)
@@ -533,6 +536,13 @@ if prompt_to_send:
     with st.chat_message("user", avatar="🎙️"):
         st.markdown(prompt_to_send)
 
+    if prompt_to_send.strip().lower().startswith("nota:"):
+        _note_content = prompt_to_send.split(":", 1)[1].strip()
+        if _note_content:
+            st.session_state.gp_notes.append(_note_content)
+        _sys_note = f"📝 Nota guardada: \"{_note_content}\". Se incluirá en las próximas consultas."
+        st.session_state.messages.append({"role": "system", "content": _sys_note})
+        st.rerun()
     with st.chat_message("assistant", avatar="📊"):
         try:
             _status = st.empty()
@@ -547,6 +557,7 @@ if prompt_to_send:
                     compare_previous_year=st.session_state.compare_previous_year,
                     user_email=_user_email,
                     on_status=_update_status,
+                    gp_notes=st.session_state.gp_notes,
                 )
             _status.empty()
             st.markdown(result["text"])
