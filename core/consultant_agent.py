@@ -145,6 +145,7 @@ class F1ConsultantAgent:
 
         # --- ENTRENAMIENTOS (FP) ---
         if wants_practice or load_all:
+            _fp_drivers: dict[str, set] = {}
             for fp_code, fp_label in [
                 ("FP1", "PRÁCTICA 1 (FP1)"),
                 ("FP2", "PRÁCTICA 2 (FP2)"),
@@ -156,6 +157,19 @@ class F1ConsultantAgent:
                     best_fp = self.db.get_best_lap_per_driver(fp_id).to_dict("records")
                     if best_fp:
                         static_context += f"--- {fp_label} ---\n" + str(best_fp) + "\n\n"
+                        _fp_drivers[fp_code] = {r["driver"] for r in best_fp}
+
+            if "FP1" in _fp_drivers and "FP2" in _fp_drivers:
+                _fp23 = _fp_drivers.get("FP2", set()) | _fp_drivers.get("FP3", set())
+                _rookies = sorted(_fp_drivers["FP1"] - _fp23)
+                if _rookies:
+                    static_context += (
+                        "--- NOTA REGLAMENTARIA (FP1) ---\n"
+                        "Los siguientes pilotos corrieron únicamente en FP1 y no aparecen en FP2/FP3. "
+                        "Por reglamento FIA 2026, cada equipo debe ceder su auto a un rookie en FP1 dos veces por temporada. "
+                        "Es posible que estos pilotos sean sustitutos temporales del titular: "
+                        f"{', '.join(_rookies)}\n\n"
+                    )
 
         # --- ALINEACIÓN ---
         lineup_sid = (self.db.get_session_id(year, gp_name, "R")
