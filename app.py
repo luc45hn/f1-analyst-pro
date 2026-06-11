@@ -4,6 +4,7 @@ import streamlit as st
 from streamlit_local_storage import LocalStorage
 from supabase import create_client
 from core.consultant_agent import F1ConsultantAgent
+from core.export_manager import export_to_docx, export_to_pdf
 from core.database_manager import F1Database
 from core.weekend_detector import detect_weekend_type, ensure_sessions_loaded, get_session_display_names, _get_event, _get_sessions
 from core.config import PREDEFINED_ANALYSES, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, APP_VERSION, DAILY_COST_LIMIT_USD
@@ -454,6 +455,10 @@ else:
     st.stop()
 
 # Render chat history
+_last_asst_idx = max(
+    (j for j, m in enumerate(st.session_state.messages) if m["role"] == "assistant"),
+    default=-1,
+)
 for i, msg in enumerate(st.session_state.messages):
     if msg["role"] == "system":
         st.markdown(
@@ -467,6 +472,28 @@ for i, msg in enumerate(st.session_state.messages):
             st.markdown(msg["content"])
             if msg["role"] == "assistant" and msg.get("chart") is not None:
                 st.plotly_chart(msg["chart"], width="stretch", key=f"chart_{i}")
+            if msg["role"] == "assistant" and i == _last_asst_idx and st.session_state.gp_loaded:
+                _exp_msgs = []
+                if i > 0 and st.session_state.messages[i - 1]["role"] == "user":
+                    _exp_msgs.append(st.session_state.messages[i - 1])
+                _exp_msgs.append(msg)
+                _gp_ex = st.session_state.gp_display or st.session_state.gp_loaded
+                _yr_ex = st.session_state.year
+                _fname = f"analisis_{_gp_ex.replace(' ', '_')}_{_yr_ex}"
+                with st.expander("🗂️ Descargar análisis", expanded=False):
+                    _c1, _c2 = st.columns(2)
+                    with _c1:
+                        st.download_button("📄 DOCX",
+                            data=export_to_docx(_exp_msgs, _gp_ex, _yr_ex),
+                            file_name=f"{_fname}.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            key=f"exp_docx_{i}")
+                    with _c2:
+                        st.download_button("📄 PDF",
+                            data=export_to_pdf(_exp_msgs, _gp_ex, _yr_ex),
+                            file_name=f"{_fname}.pdf",
+                            mime="application/pdf",
+                            key=f"exp_pdf_{i}")
 
 # Handle comparison data loading
 if st.session_state.pending_compare:
@@ -525,6 +552,27 @@ if prompt_to_send:
             st.markdown(result["text"])
             if result["chart"] is not None:
                 st.plotly_chart(result["chart"], width="stretch", key=f"chart_{len(st.session_state.messages)}")
+            if st.session_state.gp_loaded:
+                _exp_new = [{"role": "user", "content": prompt_to_send},
+                             {"role": "assistant", "content": result["text"]}]
+                _gp_ex_n = st.session_state.gp_display or st.session_state.gp_loaded
+                _yr_ex_n = st.session_state.year
+                _fname_n = f"analisis_{_gp_ex_n.replace(' ', '_')}_{_yr_ex_n}"
+                _new_i   = len(st.session_state.messages)
+                with st.expander("🗂️ Descargar análisis", expanded=False):
+                    _cn1, _cn2 = st.columns(2)
+                    with _cn1:
+                        st.download_button("📄 DOCX",
+                            data=export_to_docx(_exp_new, _gp_ex_n, _yr_ex_n),
+                            file_name=f"{_fname_n}.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            key=f"exp_docx_{_new_i}")
+                    with _cn2:
+                        st.download_button("📄 PDF",
+                            data=export_to_pdf(_exp_new, _gp_ex_n, _yr_ex_n),
+                            file_name=f"{_fname_n}.pdf",
+                            mime="application/pdf",
+                            key=f"exp_pdf_{_new_i}")
             st.session_state.messages.append({"role": "assistant", "content": result["text"], "chart": result["chart"]})
         except Exception as e:
             _is_overloaded = (

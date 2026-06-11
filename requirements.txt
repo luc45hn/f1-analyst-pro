@@ -11,3 +11,5 @@ sqlalchemy
 pytest
 pytest-mock
 streamlit-local-storage
+python-docx
+reportlab
