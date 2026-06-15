@@ -12,8 +12,9 @@ from core.chart_builder import (
     plot_lap_times, plot_sector_comparison,
     plot_tyre_degradation, plot_pit_stops,
     plot_telemetry_trace,
+    plot_race_sim_pace,
 )
-from core.driver_resolver import get_driver_name_to_code
+from core.driver_resolver import get_driver_name_to_code, get_driver_team_map
 from core.logger import get_logger
 
 logger = get_logger(__name__)
@@ -54,9 +55,13 @@ class F1ConsultantAgent:
             "undercut", "overcut", "estrategia de pit", "parada",
             "beneficio", "perjudico", "funciono la parada"
         ])
+        wants_race_sim = any(w in prompt_lower for w in [
+            'race simulation', 'simulacion de carrera', 'long run',
+            'ritmo en la practica', 'ritmo de fp2', 'simulacro'
+        ])
         if wants_sprint and "sq" in prompt_lower:
             wants_qualy = True
-        load_all = not (wants_qualy or wants_race or wants_sprint or wants_practice or wants_undercut)
+        load_all = not (wants_qualy or wants_race or wants_sprint or wants_practice or wants_undercut or wants_race_sim)
         wants_telemetry = any(w in prompt_lower for w in [
             "telemetria", "trace", "acelerador",
             "freno", "frenar", "clipping", "throttle", "brake",
@@ -260,7 +265,11 @@ class F1ConsultantAgent:
             "en términos de estrategia. "
             "Cuando tengas datos de momentos clave, mencioná los más relevantes de forma proactiva "
             "en tu análisis, especialmente track limits que afectaron resultados, caídas de ritmo "
-            "inexplicables y pérdidas bruscas de posición."
+            "inexplicables y pérdidas bruscas de posición. "
+            "Cuando muestres Race Simulation Pace, aclará SIEMPRE que es una estimación basada en long runs de FP2 "
+            "con corrección de combustible estándar, que puede no reflejar el ritmo real de carrera — "
+            "factores como programas de prueba distintos entre equipos pueden afectar el resultado. "
+            "Sugerí al periodista contextualizar con fuentes propias."
         )
 
         if load_all:
@@ -331,6 +340,27 @@ class F1ConsultantAgent:
             except Exception:
                 logger.warning("telemetry chart failed pre-API | gp=%s", gp_name)
 
+        if wants_race_sim and pre_chart is None:
+            try:
+                fp2_id = self.db.get_session_id(year, gp_name, "FP2")
+                if fp2_id:
+                    if on_status:
+                        on_status("📊 Calculando Race Simulation Pace...")
+                    pace_df = self.db.get_race_sim_pace(fp2_id)
+                    if not pace_df.empty:
+                        race_sim_by = "driver" if "por piloto" in prompt_lower else "team"
+                        _team_map = get_driver_team_map(gp_name, year)
+                        pre_chart = plot_race_sim_pace(pace_df, _team_map, gp_name, year, "FP2", race_sim_by)
+                        user_content += (
+                            f"\n\n[SISTEMA: Se generó el gráfico de Race Simulation Pace basado en long runs de FP2. "
+                            f"Modo: {'por piloto' if race_sim_by == 'driver' else 'por equipo'}. "
+                            "Datos (driver, stint, lap_count, median_lap_time, pace_trend, compound):\n"
+                            + pace_df.to_string(index=False)
+                            + "\nEl gráfico se mostrará junto a tu respuesta.]"
+                        )
+            except Exception:
+                logger.warning("race_sim chart failed | gp=%s", gp_name)
+
         if on_status:
             on_status("🤖 Generando análisis...")
         logger.debug("user_content (primeros 200 chars) | %s", user_content[:200])
@@ -383,6 +413,7 @@ class F1ConsultantAgent:
                 "wants_practice": wants_practice,
                 "wants_undercut": wants_undercut,
                 "wants_telemetry": wants_telemetry,
+                "wants_race_sim": wants_race_sim,
                 "load_all": load_all,
             },
             has_chart=chart is not None,

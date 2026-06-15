@@ -269,3 +269,56 @@ def plot_telemetry_trace(
     fig.update_xaxes(title_text="Distancia (m)", row=4, col=1)
     _log.debug("telemetry | figure built OK | traces=%d", len(fig.data))
     return fig
+
+
+def plot_race_sim_pace(
+    pace_df: pd.DataFrame,
+    driver_team_map: dict,
+    gp_name: str,
+    year: int,
+    session_type: str = "FP2",
+    by: str = "team",
+) -> go.Figure:
+    if pace_df.empty:
+        return go.Figure()
+
+    df = pace_df.copy()
+    if by == "team":
+        df["team"] = df["driver"].map(driver_team_map)
+        df = df.dropna(subset=["team"])
+        grouped = df.groupby("team")["median_lap_time"].min().reset_index()
+        grouped = grouped.sort_values("median_lap_time", ascending=True).reset_index(drop=True)
+        labels = grouped["team"].tolist()
+        times  = grouped["median_lap_time"].tolist()
+        colors = [TEAM_COLORS.get(t, "#AAAAAA") for t in labels]
+    else:
+        df = df.sort_values("median_lap_time", ascending=True).reset_index(drop=True)
+        labels = df["driver"].tolist()
+        times  = df["median_lap_time"].tolist()
+        colors = [TEAM_COLORS.get(driver_team_map.get(d, ""), "#4C9BE8") for d in labels]
+
+    fastest = times[0]
+    gaps = [t - fastest for t in times]
+    pcts = [(g / fastest) * 100 for g in gaps]
+    text_labels = [
+        f"REF  {fastest:.3f}s" if g == 0 else f"+{g:.3f}s  ({p:.2f}%)"
+        for g, p in zip(gaps, pcts)
+    ]
+
+    fig = go.Figure(go.Bar(
+        x=gaps,
+        y=labels,
+        orientation="h",
+        marker_color=colors,
+        text=text_labels,
+        textposition="outside",
+    ))
+    fig.update_layout(
+        title=f"Race Simulation Pace (estimado) — {session_type} {gp_name} {year}",
+        xaxis_title="Gap al más rápido (s)",
+        yaxis=dict(autorange="reversed"),
+        template="plotly_dark",
+        margin=dict(r=200),
+        height=max(400, len(labels) * 38),
+    )
+    return fig

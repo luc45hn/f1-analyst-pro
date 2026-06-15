@@ -1,6 +1,7 @@
 
 import json
 import psycopg2
+import numpy as np
 from sqlalchemy import create_engine, text
 import pandas as pd
 from core.config import SUPABASE_DB_URL
@@ -510,6 +511,76 @@ class F1Database:
             .sort_values(["lap_number", "event_type"])
             .reset_index(drop=True)
         )
+
+    def get_race_sim_pace(self, session_id: int, min_stint_laps: int = 5) -> pd.DataFrame:
+        _COLS = ["driver", "stint", "lap_count", "median_lap_time", "pace_trend", "compound"]
+        laps = pd.read_sql_query(
+            text(
+                "SELECT driver, stint, lap_time, compound, is_pit_in, is_pit_out, "
+                "deleted, track_status "
+                "FROM laps WHERE session_id = :sid AND lap_time IS NOT NULL"
+            ),
+            self._engine,
+            params={"sid": session_id},
+        )
+        if laps.empty:
+            return pd.DataFrame(columns=_COLS)
+
+        mask = (
+            (laps["is_pit_in"] != True)
+            & (laps["is_pit_out"] != True)
+            & (laps["deleted"] != True)
+            & (laps["track_status"] == "1")
+        )
+        laps = laps[mask].copy()
+        if laps.empty:
+            return pd.DataFrame(columns=_COLS)
+
+        grouped = laps.groupby(["driver", "stint"]).agg(
+            lap_count=("lap_time", "count"),
+        ).reset_index()
+
+        compound_mode = (
+            laps.groupby(["driver", "stint"])["compound"]
+            .agg(lambda x: x.mode().iloc[0] if not x.mode().empty else None)
+            .reset_index()
+        )
+        grouped = grouped.merge(compound_mode, on=["driver", "stint"])
+
+        candidates = grouped[grouped["lap_count"] >= min_stint_laps].copy()
+        if candidates.empty:
+            return pd.DataFrame(columns=_COLS)
+
+        rows = []
+        for _, row in candidates.iterrows():
+            stint_laps = laps[
+                (laps["driver"] == row["driver"]) & (laps["stint"] == row["stint"])
+            ]["lap_time"].reset_index(drop=True)
+            corrected = stint_laps - 0.03 * np.arange(len(stint_laps), dtype=float)
+            prelim_median = corrected.median()
+            filtered = corrected[corrected <= prelim_median * 1.08].reset_index(drop=True)
+            if len(filtered) < min_stint_laps:
+                continue
+            n = len(filtered)
+            coef = np.polyfit(np.arange(n, dtype=float), filtered.values, 1)
+            slope, intercept = coef[0], coef[1]
+            rep_time = intercept + slope * (n - 1) / 2.0
+            rows.append({
+                "driver": row["driver"],
+                "stint": row["stint"],
+                "lap_count": n,
+                "median_lap_time": rep_time,
+                "pace_trend": slope,
+                "compound": row["compound"],
+            })
+
+        if not rows:
+            return pd.DataFrame(columns=_COLS)
+
+        result = pd.DataFrame(rows, columns=_COLS)
+        best_idx = result.groupby("driver")["lap_count"].idxmax()
+        best = result.loc[best_idx].reset_index(drop=True)
+        return best[_COLS]
 
     def log_query(self, user_email, gp_name, year, prompt, intent,
                   has_chart, input_tokens, output_tokens, cost_usd, elapsed_seconds):
