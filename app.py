@@ -565,7 +565,7 @@ if prompt_to_send:
                 st.plotly_chart(result["chart"], width="stretch", key=f"chart_{len(st.session_state.messages)}")
             if st.session_state.gp_loaded:
                 _exp_new = [{"role": "user", "content": prompt_to_send},
-                             {"role": "assistant", "content": result["text"]}]
+                             {"role": "assistant", "content": result["text"], "chart": result["chart"]}]
                 _gp_ex_n = st.session_state.gp_display or st.session_state.gp_loaded
                 _yr_ex_n = st.session_state.year
                 _fname_n = f"analisis_{_gp_ex_n.replace(' ', '_')}_{_yr_ex_n}"

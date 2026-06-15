@@ -13,3 +13,4 @@ pytest-mock
 streamlit-local-storage
 python-docx
 reportlab
+kaleido
