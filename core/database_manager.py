@@ -92,6 +92,18 @@ class F1Database:
                         FOREIGN KEY (session_id) REFERENCES sessions (id)
                     )
                 """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS race_incidents (
+                        id          SERIAL PRIMARY KEY,
+                        session_id  INTEGER REFERENCES sessions(id),
+                        driver      TEXT,
+                        car_number  TEXT,
+                        message     TEXT,
+                        category    TEXT,
+                        created_at  TIMESTAMPTZ DEFAULT NOW(),
+                        UNIQUE (session_id, message)
+                    )
+                """)
                 # Column migrations for pre-existing databases
                 cur.execute("""
                     SELECT column_name FROM information_schema.columns
@@ -510,6 +522,53 @@ class F1Database:
             pd.concat(parts, ignore_index=True)
             .sort_values(["lap_number", "event_type"])
             .reset_index(drop=True)
+        )
+
+    def get_position_discrepancies(self, session_id: int) -> pd.DataFrame:
+        _COLS = ["driver", "on_track_position", "official_position", "diff"]
+        last_pos = pd.read_sql_query(
+            text("""
+                SELECT DISTINCT ON (driver) driver, position AS on_track_position
+                FROM laps
+                WHERE session_id = :sid AND position IS NOT NULL
+                ORDER BY driver, lap_number DESC
+            """),
+            self._engine, params={"sid": session_id},
+        )
+        official = pd.read_sql_query(
+            text("SELECT driver, position AS official_position "
+                 "FROM results WHERE session_id = :sid"),
+            self._engine, params={"sid": session_id},
+        )
+        if last_pos.empty or official.empty:
+            return pd.DataFrame(columns=_COLS)
+        merged = last_pos.merge(official, on="driver")
+        merged["diff"] = merged["official_position"] - merged["on_track_position"]
+        disc = merged[merged["diff"] != 0].reset_index(drop=True)
+        return disc[_COLS]
+
+    def insert_race_incidents(self, incidents: list[dict]):
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                for inc in incidents:
+                    cur.execute(
+                        """INSERT INTO race_incidents
+                               (session_id, driver, car_number, message, category)
+                           VALUES (%s, %s, %s, %s, %s)
+                           ON CONFLICT (session_id, message) DO NOTHING""",
+                        (inc["session_id"], inc["driver"], inc["car_number"],
+                         inc["message"], inc["category"]),
+                    )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def get_race_incidents(self, session_id: int) -> pd.DataFrame:
+        return pd.read_sql_query(
+            text("SELECT driver, car_number, message, category "
+                 "FROM race_incidents WHERE session_id = :sid ORDER BY id ASC"),
+            self._engine, params={"sid": session_id},
         )
 
     def get_race_sim_pace(self, session_id: int, min_stint_laps: int = 5) -> pd.DataFrame:

@@ -126,6 +126,29 @@ class F1ConsultantAgent:
                             + _km_df.to_string(index=False)
                             + "\n\n"
                         )
+                _inc_df = self.db.get_race_incidents(race_id)
+                if not _inc_df.empty:
+                    static_context += (
+                        "--- INCIDENTES E INVESTIGACIONES (R) ---\n"
+                        + _inc_df.to_string(index=False)
+                        + "\n\n"
+                    )
+                    _disc_df = self.db.get_position_discrepancies(race_id)
+                    if not _disc_df.empty:
+                        _inc_drivers = set(_inc_df["driver"].dropna().unique())
+                        notes = [
+                            f"NOTA: {row['driver']} terminó P{int(row['on_track_position'])} en pista "
+                            f"pero su posición oficial es P{int(row['official_position'])} — "
+                            "probablemente debido a la sanción mencionada arriba."
+                            for _, row in _disc_df.iterrows()
+                            if row["driver"] in _inc_drivers
+                        ]
+                        if notes:
+                            static_context += (
+                                "--- DISCREPANCIAS DE POSICIÓN POR SANCIÓN ---\n"
+                                + "\n".join(notes)
+                                + "\n\n"
+                            )
             else:
                 missing_context += "[SIN DATOS: La sesión Race (R) no está disponible en la base de datos.]\n\n"
 
@@ -269,7 +292,10 @@ class F1ConsultantAgent:
             "Cuando muestres Race Simulation Pace, aclará SIEMPRE que es una estimación basada en long runs de FP2 "
             "con corrección de combustible estándar, que puede no reflejar el ritmo real de carrera — "
             "factores como programas de prueba distintos entre equipos pueden afectar el resultado. "
-            "Sugerí al periodista contextualizar con fuentes propias."
+            "Sugerí al periodista contextualizar con fuentes propias. "
+            "Si hay incidentes o penalizaciones registradas, mencionalos cuando sean relevantes "
+            "para explicar diferencias entre posición en pista y resultado oficial. "
+            "Aclará que la posición final puede diferir de la posición en pista debido a sanciones post-carrera."
         )
 
         if load_all:

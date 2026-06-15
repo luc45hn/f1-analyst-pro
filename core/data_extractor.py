@@ -1,3 +1,4 @@
+import re
 import fastf1
 import pandas as pd
 from core.config import CACHE_DIR
@@ -22,7 +23,8 @@ def get_session_data(year, gp_name, session_type="R"):
         ff1_identifier = _FASTF1_SESSION_MAP.get(session_type, session_type)
         session = fastf1.get_session(year, gp_name, ff1_identifier)
         logger.info("Loading session data (telemetry, weather) | %s %s %s", year, gp_name, session_type)
-        session.load(laps=True, telemetry=True, weather=True, messages=False)
+        load_messages = session_type in ("R", "SS")
+        session.load(laps=True, telemetry=True, weather=True, messages=load_messages)
 
         actual_year = session.event["EventDate"].year
         if actual_year != year:
@@ -114,6 +116,40 @@ def get_session_data(year, gp_name, session_type="R"):
             db.insert_weather_data(session_id, weather_data)
         except Exception:
             logger.warning("Weather data not available | %s %s %s", year, gp_name, session_type)
+
+        if session_type in ("R", "SS"):
+            try:
+                rcm = session.race_control_messages
+                if rcm is not None and not rcm.empty:
+                    keywords = ['INVESTIGAT', 'PENALTY', 'PENALISED', 'NO FURTHER INVESTIGATION']
+                    filtered = rcm[rcm['Message'].str.contains(
+                        '|'.join(keywords), case=False, na=False
+                    )]
+                    incidents = []
+                    for _, row in filtered.iterrows():
+                        msg = str(row['Message'])
+                        driver_match = re.search(r'\((\w{2,3})\)', msg)
+                        car_match    = re.search(r'CAR\s*(\d+)', msg, re.IGNORECASE)
+                        msg_upper = msg.upper()
+                        if 'PENALTY' in msg_upper or 'PENALISED' in msg_upper:
+                            category = 'PENALTY'
+                        elif 'NO FURTHER INVESTIGATION' in msg_upper:
+                            category = 'NO_ACTION'
+                        else:
+                            category = 'INVESTIGATION'
+                        incidents.append({
+                            'session_id': session_id,
+                            'driver':     driver_match.group(1) if driver_match else None,
+                            'car_number': car_match.group(1)    if car_match    else None,
+                            'message':    msg,
+                            'category':   category,
+                        })
+                    if incidents:
+                        db.insert_race_incidents(incidents)
+                        logger.info("%d race incidents saved | %s %s %s",
+                                    len(incidents), year, gp_name, session_type)
+            except Exception:
+                logger.warning("Race incidents not available | %s %s %s", year, gp_name, session_type)
 
         logger.info("END ingesting | %s %s %s — OK", year, gp_name, session_type)
         return True
