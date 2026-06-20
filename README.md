@@ -13,6 +13,20 @@
 
 ---
 
+## Screenshots
+
+![Welcome screen](docs/cover.png)
+
+![GP loaded with session pills](docs/gp_loaded.png)
+
+![Tyre degradation analysis](docs/degradation1.png)
+
+![Tyre degradation chart](docs/degradation2.png)
+
+![FAQ expander](docs/faqs.png)
+
+---
+
 ## Overview
 
 F1 Analyst Pro combines official F1 telemetry data (via FastF1) with a Retrieval-Augmented Generation (RAG) pipeline powered by Anthropic's Claude Sonnet. The system ingests lap-by-lap telemetry, stores it in a persistent PostgreSQL database, and exposes a conversational interface where a journalist can ask complex analytical questions without writing a single query.
