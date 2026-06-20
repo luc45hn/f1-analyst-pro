@@ -33,3 +33,4 @@ data/processed/
 
 # Logs
 logs/
+.cache/
