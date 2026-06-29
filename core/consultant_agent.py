@@ -11,7 +11,7 @@ from core.database_manager import F1Database
 from core.chart_builder import (
     plot_lap_times, plot_sector_comparison,
     plot_tyre_degradation, plot_pit_stops,
-    plot_telemetry_trace,
+    plot_telemetry_trace, get_telemetry_zone_table,
     plot_race_sim_pace,
 )
 from core.driver_resolver import get_driver_name_to_code, get_driver_team_map
@@ -70,6 +70,21 @@ class F1ConsultantAgent:
         ])
         _qs = re.search(r'\b(q[123])\b', prompt_lower)
         qualifying_segment = _qs.group(1).upper() if _qs else None
+
+        _AUSTRIA_CURVE_DISTANCES = {9: (3800, 4100)}
+        distance_min: float | None = None
+        distance_max: float | None = None
+        _dist_range = re.search(
+            r'entre\s+(\d{3,5})\s*(?:m|metros)?\s*y\s+(\d{3,5})\s*(?:m|metros)?', prompt_lower
+        )
+        _curve_match = re.search(r'\bcurva\s+(\d{1,2})\b', prompt_lower)
+        if _dist_range:
+            distance_min, distance_max = float(_dist_range.group(1)), float(_dist_range.group(2))
+        elif _curve_match and "austria" in gp_name.lower():
+            _curve_num = int(_curve_match.group(1))
+            if _curve_num in _AUSTRIA_CURVE_DISTANCES:
+                distance_min, distance_max = _AUSTRIA_CURVE_DISTANCES[_curve_num]
+        logger.debug("telemetry | distance_min=%s distance_max=%s", distance_min, distance_max)
         logger.debug("intent | gp=%s wants_qualy=%s wants_race=%s wants_sprint=%s load_all=%s wants_telemetry=%s qualifying_segment=%s",
                      gp_name, wants_qualy, wants_race, wants_sprint, load_all, wants_telemetry, qualifying_segment)
 
@@ -297,7 +312,10 @@ class F1ConsultantAgent:
             "para explicar diferencias entre posición en pista y resultado oficial. "
             "Aclará que la posición final puede diferir de la posición en pista debido a sanciones post-carrera. "
             "NUNCA generes bloques de código Python, matplotlib, plotly ni ningún otro lenguaje de programación "
-            "en tus respuestas. Si un gráfico no está disponible, explicalo en texto y sugerí reintentar."
+            "en tus respuestas. Si un gráfico no está disponible, explicalo en texto y sugerí reintentar. "
+            "Cuando analices tablas de telemetría comparativa con columnas como Throttle_V16 y Throttle_V19, "
+            "recordá que son dos vueltas del MISMO piloto en la misma sesión, no dos pilotos distintos. "
+            "Siempre referenciá como vuelta 19 y vuelta 16 del mismo piloto, nunca como pilotos diferentes."
         )
 
         if load_all:
@@ -354,6 +372,7 @@ class F1ConsultantAgent:
                     pre_chart = plot_telemetry_trace(
                         None, gp_name, year, _tel_drivers, _stype,
                         qualifying_segment if _stype == "Q" else None,
+                        distance_min, distance_max,
                     )
                     if pre_chart is not None:
                         logger.debug("pre_chart OK | drivers=%s session=%s", _tel_drivers, _stype)
@@ -374,6 +393,28 @@ class F1ConsultantAgent:
                             "puede resolverlo de dos formas: 1) esperar 2-3 minutos y repetir la pregunta, o 2) recargar "
                             "la página completa (F5) para reiniciar la sesión. NUNCA generes código Python como alternativa.]"
                         )
+
+                    if distance_min is not None and distance_max is not None and len(_tel_drivers) == 1 and _stype == "Q" and _q_id:
+                        try:
+                            _zone_laps = self.db.get_laps_data(_q_id)
+                            _zone_laps = _zone_laps[
+                                (_zone_laps["driver"] == _tel_drivers[0])
+                                & _zone_laps["lap_time"].notna()
+                                & (_zone_laps["lap_time"] <= 120)
+                            ].sort_values("lap_time")
+                            _zone_lap_numbers = _zone_laps["lap_number"].head(2).tolist()
+                            if _zone_lap_numbers:
+                                zone_table = get_telemetry_zone_table(
+                                    gp_name, year, _tel_drivers[0], _stype,
+                                    _zone_lap_numbers, distance_min, distance_max,
+                                )
+                                if zone_table is not None and not zone_table.empty:
+                                    user_content += (
+                                        f"\n\n--- TELEMETRÍA ZONA {distance_min:.0f}-{distance_max:.0f}m ---\n"
+                                        + zone_table.to_string(index=False)
+                                    )
+                        except Exception:
+                            logger.warning("telemetry zone table failed | gp=%s", gp_name)
             except Exception:
                 logger.warning("telemetry chart failed pre-API | gp=%s", gp_name)
 

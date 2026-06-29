@@ -167,6 +167,53 @@ _DRIVER_FILL_COLORS = ["rgba(226,75,74,0.15)", "rgba(55,138,221,0.15)"]
 _FF1_SESSION_MAP = {"SS": "Sprint", "SQ": "Sprint Qualifying"}
 
 
+def get_telemetry_zone_table(
+    gp_name: str,
+    year: int,
+    driver: str,
+    session_type: str,
+    lap_numbers: list[int],
+    distance_min: float,
+    distance_max: float,
+) -> pd.DataFrame | None:
+    import fastf1
+    from core.config import CACHE_DIR
+
+    ff1_identifier = _FF1_SESSION_MAP.get(session_type, session_type)
+    try:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        fastf1.Cache.enable_cache(str(CACHE_DIR))
+        session = fastf1.get_session(year, gp_name, ff1_identifier)
+        session.load(laps=True, telemetry=True, weather=False, messages=False)
+    except Exception as e:
+        _log.exception("telemetry_zone_table | session load failed | %s", e)
+        return None
+
+    drv_laps = session.laps[session.laps["Driver"] == driver]
+    zones: list[tuple[int, pd.DataFrame]] = []
+    for lap_number in lap_numbers:
+        try:
+            lap = drv_laps[drv_laps["LapNumber"] == lap_number].iloc[0]
+            tel = lap.get_car_data().add_distance()
+            tel = tel[(tel["Distance"] >= distance_min) & (tel["Distance"] <= distance_max)]
+            zones.append((lap_number, tel[["Distance", "Throttle", "Speed"]].reset_index(drop=True)))
+        except Exception as e:
+            _log.warning("telemetry_zone_table | lap=%s failed | %s", lap_number, e)
+            continue
+
+    if not zones:
+        return None
+
+    if len(zones) == 1:
+        return zones[0][1]
+
+    table = zones[0][1][["Distance"]].copy()
+    for lap_number, tel in zones:
+        table[f"Throttle_V{lap_number}"] = tel["Throttle"]
+        table[f"Speed_V{lap_number}"] = tel["Speed"]
+    return table
+
+
 def plot_telemetry_trace(
     laps_data,
     gp_name: str,
@@ -174,6 +221,8 @@ def plot_telemetry_trace(
     drivers: list[str],
     session_type: str = "Q",
     qualifying_segment: str | None = None,
+    distance_min: float | None = None,
+    distance_max: float | None = None,
 ) -> go.Figure | None:
     import fastf1
     from core.config import CACHE_DIR
@@ -199,69 +248,103 @@ def plot_telemetry_trace(
         vertical_spacing=0.06,
     )
 
-    for i, drv in enumerate(drivers):
-        color = _DRIVER_COLORS[i]
-        fill_color = _DRIVER_FILL_COLORS[i]
+    compare_laps_mode = qualifying_segment == "Q3" and len(drivers) == 1
+    entries: list[tuple[str, "pd.Series", str, str]] = []
+
+    if compare_laps_mode:
+        drv = drivers[0]
         try:
             drv_laps = session.laps[session.laps["Driver"] == drv]
-            _log.debug("telemetry | driver=%s laps_found=%d", drv, len(drv_laps))
-            if drv_laps.empty:
-                _log.warning("telemetry | no laps for driver=%s", drv)
-                continue
-            if qualifying_segment:
-                _stint_map = {"Q1": 1, "Q2": 2, "Q3": 3}
-                _seg_laps = drv_laps[drv_laps["Stint"] == _stint_map[qualifying_segment]]
-                drv_laps = _seg_laps if not _seg_laps.empty else drv_laps
-            lap = drv_laps.loc[drv_laps["LapTime"].idxmin()]
-            tel = lap.get_car_data().add_distance()
-            _log.debug("telemetry | car_data OK | driver=%s points=%d", drv, len(tel))
+            q3_laps = drv_laps[
+                drv_laps["LapTime"].notna()
+                & (drv_laps["LapTime"].dt.total_seconds() <= 120)
+            ]
         except Exception as e:
-            _log.warning("telemetry | driver=%s failed | %s", drv, e)
+            _log.warning("telemetry | compare-laps lookup failed | driver=%s | %s", drv, e)
+            q3_laps = pd.DataFrame()
+        if q3_laps.empty:
+            _log.debug("telemetry | no valid laps for compare mode | driver=%s", drv)
+            compare_laps_mode = False
+        else:
+            top_laps = q3_laps.sort_values("LapTime").head(2)
+            for idx, (_, lap) in enumerate(top_laps.iterrows()):
+                label = f"{drv} — Vuelta {int(lap['LapNumber'])} ({lap['LapTime'].total_seconds():.3f}s)"
+                entries.append((label, lap, _DRIVER_COLORS[idx], _DRIVER_FILL_COLORS[idx]))
+
+    if not compare_laps_mode:
+        for i, drv in enumerate(drivers):
+            color = _DRIVER_COLORS[i]
+            fill_color = _DRIVER_FILL_COLORS[i]
+            try:
+                drv_laps = session.laps[session.laps["Driver"] == drv]
+                _log.debug("telemetry | driver=%s laps_found=%d", drv, len(drv_laps))
+                if drv_laps.empty:
+                    _log.warning("telemetry | no laps for driver=%s", drv)
+                    continue
+                if qualifying_segment:
+                    _stint_map = {"Q1": 1, "Q2": 2, "Q3": 3}
+                    _seg_laps = drv_laps[drv_laps["Stint"] == _stint_map[qualifying_segment]]
+                    drv_laps = _seg_laps if not _seg_laps.empty else drv_laps
+                lap = drv_laps.loc[drv_laps["LapTime"].idxmin()]
+            except Exception as e:
+                _log.warning("telemetry | driver=%s failed | %s", drv, e)
+                continue
+            entries.append((drv, lap, color, fill_color))
+
+    for label, lap, color, fill_color in entries:
+        try:
+            tel = lap.get_car_data().add_distance()
+            if distance_min is not None and distance_max is not None:
+                tel = tel[(tel["Distance"] >= distance_min) & (tel["Distance"] <= distance_max)]
+            _log.debug("telemetry | car_data OK | label=%s points=%d", label, len(tel))
+        except Exception as e:
+            _log.warning("telemetry | label=%s failed | %s", label, e)
             continue
 
         x = tel["Distance"]
 
         try:
             fig.add_trace(go.Scatter(
-                x=x, y=tel["Speed"], name=drv,
+                x=x, y=tel["Speed"], name=label,
                 line=dict(color=color, width=1.5),
-                legendgroup=drv, showlegend=True,
+                legendgroup=label, showlegend=True,
             ), row=1, col=1)
         except Exception as e:
-            _log.warning("telemetry | subplot Speed failed | driver=%s | %s", drv, e)
+            _log.warning("telemetry | subplot Speed failed | label=%s | %s", label, e)
 
         try:
             fig.add_trace(go.Scatter(
-                x=x, y=tel["Throttle"], name=drv,
+                x=x, y=tel["Throttle"], name=label,
                 line=dict(color=color, width=1.5),
                 fill="tozeroy", fillcolor=fill_color,
-                legendgroup=drv, showlegend=False,
+                legendgroup=label, showlegend=False,
             ), row=2, col=1)
         except Exception as e:
-            _log.warning("telemetry | subplot Throttle failed | driver=%s | %s", drv, e)
+            _log.warning("telemetry | subplot Throttle failed | label=%s | %s", label, e)
 
         try:
             brake_y = (tel["Brake"].astype(int) * 100).clip(0, 100)
             fig.add_trace(go.Scatter(
-                x=x, y=brake_y, name=drv,
+                x=x, y=brake_y, name=label,
                 line=dict(color=color, width=1.5),
                 fill="tozeroy", fillcolor=fill_color,
-                legendgroup=drv, showlegend=False,
+                legendgroup=label, showlegend=False,
             ), row=3, col=1)
         except Exception as e:
-            _log.warning("telemetry | subplot Brake failed | driver=%s | %s", drv, e)
+            _log.warning("telemetry | subplot Brake failed | label=%s | %s", label, e)
 
         try:
             fig.add_trace(go.Scatter(
-                x=x, y=tel["nGear"], name=drv,
+                x=x, y=tel["nGear"], name=label,
                 line=dict(color=color, width=1.5),
-                legendgroup=drv, showlegend=False,
+                legendgroup=label, showlegend=False,
             ), row=4, col=1)
         except Exception as e:
-            _log.warning("telemetry | subplot Gear failed | driver=%s | %s", drv, e)
+            _log.warning("telemetry | subplot Gear failed | label=%s | %s", label, e)
 
+    title_drivers = entries[0][0].split(" — ")[0] if compare_laps_mode and entries else " vs ".join(drivers)
     fig.update_layout(
-        title=f'Telemetría — {" vs ".join(drivers)} · {session_type} {gp_name} {year}',
+        title=f'Telemetría — {title_drivers} · {session_type} {gp_name} {year}',
         template="plotly_dark",
         height=700,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
