@@ -295,7 +295,9 @@ class F1ConsultantAgent:
             "Sugerí al periodista contextualizar con fuentes propias. "
             "Si hay incidentes o penalizaciones registradas, mencionalos cuando sean relevantes "
             "para explicar diferencias entre posición en pista y resultado oficial. "
-            "Aclará que la posición final puede diferir de la posición en pista debido a sanciones post-carrera."
+            "Aclará que la posición final puede diferir de la posición en pista debido a sanciones post-carrera. "
+            "NUNCA generes bloques de código Python, matplotlib, plotly ni ningún otro lenguaje de programación "
+            "en tus respuestas. Si un gráfico no está disponible, explicalo en texto y sugerí reintentar."
         )
 
         if load_all:
@@ -356,13 +358,22 @@ class F1ConsultantAgent:
                     if pre_chart is not None:
                         logger.debug("pre_chart OK | drivers=%s session=%s", _tel_drivers, _stype)
                         user_content += (
-                            f"\n\n[SISTEMA: El gráfico de telemetría de {' vs '.join(_tel_drivers)} "
-                            f"en {_stype} ya fue generado y se mostrará junto a tu respuesta. "
-                            "Explicá brevemente qué muestra cada canal (Speed, Throttle, Brake, Gear) "
-                            "y qué conclusiones técnicas se pueden sacar. No generes código.]"
+                            f"\n\n[SYSTEM: Se generó el gráfico de telemetría de {', '.join(_tel_drivers)} "
+                            f"en {_stype}. El gráfico ya está visible para el usuario. "
+                            f"Analizá lo que se ve en el gráfico: zonas de frenada, puntos de aceleración, "
+                            f"velocidades mínimas en curva, secuencia de marchas. "
+                            f"Referenciá el gráfico explícitamente en tu respuesta ('Como se ve en el gráfico...'). "
+                            f"NO describas qué muestra cada canal en abstracto — analizá los datos específicos de este piloto.]"
                         )
                     else:
                         logger.debug("pre_chart falló o retornó None | drivers=%s session=%s", _tel_drivers, _stype)
+                        user_content += (
+                            "\n\n[SYSTEM: Se intentó generar el gráfico de telemetría pero los datos de canal "
+                            "(velocidad/acelerador/freno) no estaban disponibles en Streamlit Cloud en este momento. "
+                            "Explicá al usuario que esto ocurre cuando el servidor no tiene los datos en caché, y que "
+                            "puede resolverlo de dos formas: 1) esperar 2-3 minutos y repetir la pregunta, o 2) recargar "
+                            "la página completa (F5) para reiniciar la sesión. NUNCA generes código Python como alternativa.]"
+                        )
             except Exception:
                 logger.warning("telemetry chart failed pre-API | gp=%s", gp_name)
 
