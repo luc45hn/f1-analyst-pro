@@ -86,19 +86,28 @@ def ensure_sessions_loaded(gp_name: str, db, year: int = 2026) -> tuple[bool, in
 
     Returns (any_loaded, loaded_count, total_count).
     """
+    try:
+        event = _get_event(year, gp_name)
+        official_name: str = event["EventName"]
+    except GPNotFoundError:
+        raise
+    except Exception:
+        official_name = gp_name
+    _log.debug("ensure_sessions_loaded | input=%r → official=%r", gp_name, official_name)
+
     any_loaded   = False
     loaded_count = 0
     total        = 0
     for stype in [s for s in _get_sessions(gp_name, year) if s in _INGESTABLE]:
         total += 1
-        if db.session_exists(year, gp_name, stype):
+        if db.session_exists(year, official_name, stype):
             any_loaded = True
             loaded_count += 1
         else:
-            result = get_session_data(year, gp_name, session_type=stype)
+            result = get_session_data(year, official_name, session_type=stype)
             if result:
                 any_loaded = True
                 loaded_count += 1
             else:
-                _log.warning("session not available | %s %s %s — continuando", year, gp_name, stype)
+                _log.warning("session not available | %s %s %s — continuando", year, official_name, stype)
     return any_loaded, loaded_count, total
