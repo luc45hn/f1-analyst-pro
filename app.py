@@ -305,7 +305,7 @@ if st.session_state.loading_gp:
                     _log.info("GP loaded | gp=%s year=%d sessions=%d/%d elapsed=%.1fs",
                               _gp_name, _year, n_loaded, n_total, time.time() - _t0_load)
                     _official = _get_event(_year, _gp_name).get("EventName", "").strip() or _gp_name
-                    st.session_state.gp_loaded            = _gp_name
+                    st.session_state.gp_loaded            = _official
                     st.session_state.gp_display           = _official
                     st.session_state.gp_input_raw         = st.session_state._pending_gp_input_raw
                     st.session_state.year                 = _year
@@ -318,7 +318,7 @@ if st.session_state.loading_gp:
                     st.session_state.sessions_available   = get_session_display_names(_gp_name, _year)
                     st.session_state.sessions_load_summary = f"{n_loaded} de {n_total}"
                     st.session_state.sessions_db_status   = {
-                        code: db.session_exists(_year, _gp_name, code)
+                        code: db.session_exists(_year, _official, code)
                         for code, _ in st.session_state.sessions_available
                     }
                     st.session_state.loading_gp = False
