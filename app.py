@@ -631,7 +631,7 @@ with tab_telemetry:
             drivers_list = sorted(_pref_laps["driver"].dropna().unique().tolist())
             break
 
-    # ── Row 1: selección de pilotos ───────────────────────────────────────────
+    # ── Selectboxes reactivos (fuera del form) ────────────────────────────────
     _dc1, _dc2 = st.columns(2)
     with _dc1:
         drv1 = st.selectbox("Piloto 1", drivers_list or ["—"], key="tel_drv1")
@@ -642,7 +642,6 @@ with tab_telemetry:
             key="tel_drv2",
         )
 
-    # ── Row 2: sesión + vueltas ───────────────────────────────────────────────
     _sc1, _sc2, _sc3 = st.columns(3)
     with _sc1:
         sel_session = st.selectbox(
@@ -650,6 +649,8 @@ with tab_telemetry:
             _tel_avail or ["Q", "R", "FP1", "FP2", "FP3"],
             key="tel_session",
         )
+
+    _compare_mode = drv2 == "— comparar con vuelta anterior —"
 
     # Lap options para el piloto 1 en la sesión seleccionada
     _sel_sid = _db_tel.get_session_id(_yr, _gp, sel_session)
@@ -665,20 +666,30 @@ with tab_telemetry:
             f"Vuelta {int(r['lap_number'])} — {r['lap_time']:.3f}s"
             for _, r in _d1_laps.iterrows()
         ]
-    with _sc2:
-        st.selectbox(
-            "Vuelta piloto 1",
-            lap_options or ["(auto — más rápida)"],
-            key="tel_lap1",
-        )
-    with _sc3:
-        st.selectbox(
-            "Vuelta referencia",
-            ["Vuelta anterior (auto)"] + lap_options,
-            key="tel_lap_ref",
-        )
 
-    # Parsear números de vuelta seleccionados para modo explícito
+    # Lap options para el piloto 2 (solo en modo dos pilotos distintos)
+    lap_options_p2: list[str] = []
+    if not _compare_mode and _sel_sid and drv2 not in ("—", "— comparar con vuelta anterior —"):
+        _d2_laps = _db_tel.get_laps_data(_sel_sid)
+        _d2_laps = _d2_laps[
+            (_d2_laps["driver"] == drv2)
+            & _d2_laps["lap_time"].notna()
+            & (_d2_laps["lap_time"] <= 200)
+        ].sort_values("lap_number")
+        lap_options_p2 = [
+            f"Vuelta {int(r['lap_number'])} — {r['lap_time']:.3f}s"
+            for _, r in _d2_laps.iterrows()
+        ]
+
+    with _sc2:
+        st.selectbox("Vuelta piloto 1", lap_options or ["(auto — más rápida)"], key="tel_lap1")
+    with _sc3:
+        if _compare_mode:
+            st.selectbox("Vuelta referencia", ["Vuelta anterior (auto)"] + lap_options, key="tel_lap_ref")
+        else:
+            st.selectbox("Vuelta piloto 2", ["(auto — más rápida)"] + lap_options_p2, key="tel_lap_p2")
+
+    # Parsear números de vuelta (reactivo — depende de selectboxes de arriba)
     def _parse_lap_num(s: str) -> int | None:
         _m = re.search(r'Vuelta\s+(\d+)', s or "")
         return int(_m.group(1)) if _m else None
@@ -692,32 +703,43 @@ with tab_telemetry:
         _lapref_num = _parse_lap_num(_lapref_str)
     _explicit_laps: list[int] | None = [n for n in [_lap1_num, _lapref_num] if n is not None] or None
 
-    # ── Canales ───────────────────────────────────────────────────────────────
-    st.markdown("**Canales**")
-    _ch1, _ch2, _ch3, _ch4, _ch5, _ch6 = st.columns(6)
-    with _ch1: ch_speed    = st.checkbox("Velocidad",    value=True,  key="tel_ch_speed")
-    with _ch2: ch_throttle = st.checkbox("Acelerador",   value=True,  key="tel_ch_throttle")
-    with _ch3: ch_brake    = st.checkbox("Freno",        value=True,  key="tel_ch_brake")
-    with _ch4: ch_gear     = st.checkbox("Marcha",       value=True,  key="tel_ch_gear")
-    with _ch5: ch_rpm      = st.checkbox("RPM",          value=False, key="tel_ch_rpm")
-    with _ch6: ch_gps      = st.checkbox("Posición GPS", value=False, key="tel_ch_gps")
+    # Vuelta explícita del piloto 2 (modo dos pilotos distintos)
+    _lap2_str = st.session_state.get("tel_lap_p2", "")
+    _lap2_num: int | None = (
+        None if not _lap2_str or _lap2_str == "(auto — más rápida)"
+        else _parse_lap_num(_lap2_str)
+    )
 
-    # ── Zona de circuito (opcional) ───────────────────────────────────────────
-    with st.expander("🔍 Zona de circuito (opcional)"):
-        _z1, _z2, _z3 = st.columns(3)
-        with _z1: zone_from  = st.number_input("Desde (m)", 0, 10000, 0, 50, key="tel_zone_from")
-        with _z2: zone_to    = st.number_input("Hasta (m)", 0, 10000, 0, 50, key="tel_zone_to")
-        with _z3: zone_label = st.text_input("Descripción zona",
-                                              placeholder="ej: Curva 9, chicane final...",
-                                              key="tel_zone_label")
+    # ── Form: canales + zona (sin rerun hasta submit) ─────────────────────────
+    with st.form("telemetry_form"):
+        st.markdown("**Canales**")
+        _ch1, _ch2, _ch3, _ch4, _ch5, _ch6 = st.columns(6)
+        with _ch1: ch_speed    = st.checkbox("Velocidad",    value=True,  key="tel_ch_speed")
+        with _ch2: ch_throttle = st.checkbox("Acelerador",   value=True,  key="tel_ch_throttle")
+        with _ch3: ch_brake    = st.checkbox("Freno",        value=True,  key="tel_ch_brake")
+        with _ch4: ch_gear     = st.checkbox("Marcha",       value=True,  key="tel_ch_gear")
+        with _ch5: ch_rpm      = st.checkbox("RPM",          value=False, key="tel_ch_rpm")
+        with _ch6: ch_gps      = st.checkbox("Posición GPS", value=False, key="tel_ch_gps")
+
+        with st.expander("🔍 Zona de circuito (opcional)"):
+            _z1, _z2, _z3 = st.columns(3)
+            with _z1: zone_from  = st.number_input("Desde (m)", 0, 10000, 0, 50, key="tel_zone_from")
+            with _z2: zone_to    = st.number_input("Hasta (m)", 0, 10000, 0, 50, key="tel_zone_to")
+            with _z3: zone_label = st.text_input("Descripción zona",
+                                                  placeholder="ej: Curva 9, chicane final...",
+                                                  key="tel_zone_label")
+
+        _tel_submitted = st.form_submit_button("📡 Generar gráfico", type="primary")
+
     _dist_min = float(zone_from) if zone_to > zone_from else None
     _dist_max = float(zone_to)   if zone_to > zone_from else None
 
-    # ── Botón generar ─────────────────────────────────────────────────────────
-    if st.button("📡 Generar gráfico", type="primary", key="tel_gen_btn") and drivers_list and drv1 != "—":
-        _compare_mode = drv2 == "— comparar con vuelta anterior —"
+    # ── Procesar submit ───────────────────────────────────────────────────────
+    if _tel_submitted and drivers_list and drv1 != "—":
         _tel_drivers_call = [drv1] if _compare_mode else [drv1, drv2]
-        _lap_nums_call = _explicit_laps if _compare_mode else None
+        _lap_nums_call    = _explicit_laps if _compare_mode else None
+        _explicit_lap_p1  = _lap1_num if not _compare_mode else None
+        _explicit_lap_p2  = _lap2_num if not _compare_mode else None
         # Si hay vueltas explícitas no hace falta el sentinel; si no, activar compare_laps_mode automático
         _qs_call = (
             None if (_compare_mode and _lap_nums_call)
@@ -727,7 +749,7 @@ with tab_telemetry:
         with st.spinner("📡 Descargando telemetría de FastF1... (puede tardar ~10s)"):
             _tel_fig = plot_telemetry_trace(
                 None, _gp, _yr, _tel_drivers_call,
-                sel_session, _qs_call, _dist_min, _dist_max, _lap_nums_call,
+                sel_session, _qs_call, _dist_min, _dist_max, _lap_nums_call, _explicit_lap_p2, _explicit_lap_p1,
             )
         st.session_state.tel_chart   = _tel_fig
         st.session_state.tel_ai_text = None
@@ -747,14 +769,39 @@ with tab_telemetry:
         if st.button("🤖 Analizar con IA ↗", key="tel_ai_btn"):
             _is_compare = st.session_state.get("tel_drv2") == "— comparar con vuelta anterior —"
             _drv_label  = drv1 if _is_compare else f"{drv1} vs {st.session_state.get('tel_drv2', '')}"
-            _zone_sfx   = (
+            # Nombres de sesión legibles
+            _SESSION_DISPLAY = {
+                "Q": "Qualifying", "R": "Race (carrera)",
+                "FP1": "Practice 1 (FP1)", "FP2": "Practice 2 (FP2)", "FP3": "Practice 3 (FP3)",
+                "SQ": "Sprint Qualifying (SQ)", "SS": "Sprint Race (SS)",
+            }
+            _sess_display = _SESSION_DISPLAY.get(sel_session, sel_session)
+            # Extraer labels de vuelta desde los nombres de trazas del gráfico ya generado
+            _fig_ref = st.session_state.tel_chart
+            _lap_labels: list[str] = []
+            if _fig_ref and _fig_ref.data:
+                _seen_names: set[str] = set()
+                for _t in _fig_ref.data:
+                    if _t.name and _t.name not in _seen_names:
+                        _seen_names.add(_t.name)
+                        _lap_labels.append(_t.name)
+            if len(_lap_labels) >= 2:
+                _lap_desc = f"comparando {_lap_labels[0]} con {_lap_labels[1]}"
+            elif _lap_labels:
+                _lap_desc = f"vuelta {_lap_labels[0]}"
+            else:
+                _lap_desc = "las vueltas del gráfico"
+            _zone_sfx = (
                 f" Zona analizada: {st.session_state.get('tel_zone_label') or f'{int(zone_from)}-{int(zone_to)}m'}."
                 if _dist_max else ""
             )
             _ai_prompt = (
-                f"Analizá la telemetría de {_drv_label} en {sel_session} "
-                f"de {_gp} {_yr}.{_zone_sfx} "
-                f"Describí diferencias en velocidad, acelerador, freno y marcha."
+                f"Analizá la telemetría de {_drv_label} en la sesión {sel_session} ({_sess_display}) "
+                f"de {_gp} {_yr}, {_lap_desc}.{_zone_sfx} "
+                f"Basate en el gráfico ya generado y los datos de la sesión {sel_session}. "
+                f"Usá SOLO datos de la sesión {sel_session} — ignorá otras sesiones del fin de semana. "
+                f"Analizá velocidad en frenadas, puntos de aceleración, presión de freno y secuencia de marchas. "
+                f"Referenciá explícitamente las vueltas nombradas en el gráfico."
             )
             with st.spinner("🤖 Analizando con IA..."):
                 _ai_res = st.session_state.agent.send_message(

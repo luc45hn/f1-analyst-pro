@@ -224,6 +224,8 @@ def plot_telemetry_trace(
     distance_min: float | None = None,
     distance_max: float | None = None,
     lap_numbers: list[int] | None = None,
+    explicit_lap_p2: int | None = None,
+    explicit_lap_p1: int | None = None,
 ) -> go.Figure | None:
     import fastf1
     from core.config import CACHE_DIR
@@ -305,11 +307,22 @@ def plot_telemetry_trace(
                     _stint_map = {"Q1": 1, "Q2": 2, "Q3": 3}
                     _seg_laps = drv_laps[drv_laps["Stint"] == _stint_map[qualifying_segment]]
                     drv_laps = _seg_laps if not _seg_laps.empty else drv_laps
-                lap = drv_laps.loc[drv_laps["LapTime"].idxmin()]
+                # Usar vuelta explícita si se especificó para este piloto
+                _explicit_lap = (
+                    explicit_lap_p1 if i == 0
+                    else explicit_lap_p2 if i == 1
+                    else None
+                )
+                if _explicit_lap is not None:
+                    _ex_row = drv_laps[drv_laps["LapNumber"] == _explicit_lap]
+                    lap = _ex_row.iloc[0] if not _ex_row.empty else drv_laps.loc[drv_laps["LapTime"].idxmin()]
+                else:
+                    lap = drv_laps.loc[drv_laps["LapTime"].idxmin()]
             except Exception as e:
                 _log.warning("telemetry | driver=%s failed | %s", drv, e)
                 continue
-            entries.append((drv, lap, color, fill_color))
+            label = f"{drv} — Vuelta {int(lap['LapNumber'])} ({lap['LapTime'].total_seconds():.3f}s)"
+            entries.append((label, lap, color, fill_color))
 
     for label, lap, color, fill_color in entries:
         try:
