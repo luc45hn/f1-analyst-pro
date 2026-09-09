@@ -408,6 +408,13 @@ elif st.session_state.gp_loaded:
 - Podés comparar con el año anterior usando el botón de abajo en el panel
 - Podés agregar contexto escribiendo: "Nota: Mercedes trajo fondo plano nuevo a este GP"
 """)
+        st.markdown("#### Pestaña Telemetría")
+        st.markdown("""
+- Seleccioná piloto, sesión y vuelta para ver los canales de velocidad, acelerador, freno y marcha
+- Comparación automática: elegí un segundo piloto o seleccioná comparar con vuelta anterior
+- Podés filtrar una zona específica usando los metros del circuito (ej: entre 2000 y 2600m)
+- Usá el botón Analizar con IA para obtener un análisis narrativo del gráfico
+""")
         st.markdown("#### Capacidades")
         _col_yes, _col_no = st.columns(2)
         with _col_yes:
@@ -713,21 +720,16 @@ with tab_telemetry:
     # ── Form: canales + zona (sin rerun hasta submit) ─────────────────────────
     with st.form("telemetry_form"):
         st.markdown("**Canales**")
-        _ch1, _ch2, _ch3, _ch4, _ch5, _ch6 = st.columns(6)
-        with _ch1: ch_speed    = st.checkbox("Velocidad",    value=True,  key="tel_ch_speed")
-        with _ch2: ch_throttle = st.checkbox("Acelerador",   value=True,  key="tel_ch_throttle")
-        with _ch3: ch_brake    = st.checkbox("Freno",        value=True,  key="tel_ch_brake")
-        with _ch4: ch_gear     = st.checkbox("Marcha",       value=True,  key="tel_ch_gear")
-        with _ch5: ch_rpm      = st.checkbox("RPM",          value=False, key="tel_ch_rpm")
-        with _ch6: ch_gps      = st.checkbox("Posición GPS", value=False, key="tel_ch_gps")
+        _ch1, _ch2, _ch3, _ch4 = st.columns(4)
+        with _ch1: ch_speed    = st.checkbox("Velocidad",  value=True, key="tel_ch_speed")
+        with _ch2: ch_throttle = st.checkbox("Acelerador", value=True, key="tel_ch_throttle")
+        with _ch3: ch_brake    = st.checkbox("Freno",      value=True, key="tel_ch_brake")
+        with _ch4: ch_gear     = st.checkbox("Marcha",     value=True, key="tel_ch_gear")
 
         with st.expander("🔍 Zona de circuito (opcional)"):
-            _z1, _z2, _z3 = st.columns(3)
-            with _z1: zone_from  = st.number_input("Desde (m)", 0, 10000, 0, 50, key="tel_zone_from")
-            with _z2: zone_to    = st.number_input("Hasta (m)", 0, 10000, 0, 50, key="tel_zone_to")
-            with _z3: zone_label = st.text_input("Descripción zona",
-                                                  placeholder="ej: Curva 9, chicane final...",
-                                                  key="tel_zone_label")
+            _z1, _z2 = st.columns(2)
+            with _z1: zone_from = st.number_input("Desde (m)", 0, 10000, 0, 50, key="tel_zone_from")
+            with _z2: zone_to   = st.number_input("Hasta (m)", 0, 10000, 0, 50, key="tel_zone_to")
 
         _tel_submitted = st.form_submit_button("📡 Generar gráfico", type="primary")
 
@@ -763,7 +765,7 @@ with tab_telemetry:
         _ch_visible = [ch_speed, ch_throttle, ch_brake, ch_gear]
         for _tidx, _trace in enumerate(_fig.data):
             _trace.visible = _ch_visible[_tidx % 4]
-        st.plotly_chart(_fig, use_container_width=True, key="tel_plotly_chart")
+        st.plotly_chart(_fig, width='stretch', key="tel_plotly_chart")
 
         # ── Analizar con IA ───────────────────────────────────────────────────
         if st.button("🤖 Analizar con IA ↗", key="tel_ai_btn"):
