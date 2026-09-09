@@ -223,6 +223,7 @@ def plot_telemetry_trace(
     qualifying_segment: str | None = None,
     distance_min: float | None = None,
     distance_max: float | None = None,
+    lap_numbers: list[int] | None = None,
 ) -> go.Figure | None:
     import fastf1
     from core.config import CACHE_DIR
@@ -248,8 +249,27 @@ def plot_telemetry_trace(
         vertical_spacing=0.06,
     )
 
-    compare_laps_mode = qualifying_segment == "Q3" and len(drivers) == 1
+    # Explicit lap numbers (desde UI) tienen prioridad sobre compare_laps_mode automático
+    explicit_laps_mode = lap_numbers is not None and len(drivers) == 1
+    # "Q3" activa compare en qualy; "COMPARE" es sentinel para activar en cualquier sesión
+    compare_laps_mode = (
+        not explicit_laps_mode
+        and qualifying_segment in ("Q3", "COMPARE")
+        and len(drivers) == 1
+    )
     entries: list[tuple[str, "pd.Series", str, str]] = []
+
+    if explicit_laps_mode:
+        drv = drivers[0]
+        drv_laps = session.laps[session.laps["Driver"] == drv]
+        for idx, lap_number in enumerate(lap_numbers[:2]):
+            try:
+                lap_row = drv_laps[drv_laps["LapNumber"] == lap_number].iloc[0]
+                lap_time_s = lap_row["LapTime"].total_seconds()
+                label = f"{drv} — Vuelta {lap_number} ({lap_time_s:.3f}s)"
+                entries.append((label, lap_row, _DRIVER_COLORS[idx], _DRIVER_FILL_COLORS[idx]))
+            except Exception as e:
+                _log.warning("telemetry | explicit lap=%s not found | %s", lap_number, e)
 
     if compare_laps_mode:
         drv = drivers[0]
@@ -271,7 +291,7 @@ def plot_telemetry_trace(
                 label = f"{drv} — Vuelta {int(lap['LapNumber'])} ({lap['LapTime'].total_seconds():.3f}s)"
                 entries.append((label, lap, _DRIVER_COLORS[idx], _DRIVER_FILL_COLORS[idx]))
 
-    if not compare_laps_mode:
+    if not compare_laps_mode and not explicit_laps_mode:
         for i, drv in enumerate(drivers):
             color = _DRIVER_COLORS[i]
             fill_color = _DRIVER_FILL_COLORS[i]

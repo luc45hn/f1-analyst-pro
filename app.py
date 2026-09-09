@@ -4,6 +4,7 @@ import streamlit as st
 from streamlit_local_storage import LocalStorage
 from supabase import create_client
 from core.consultant_agent import F1ConsultantAgent
+from core.chart_builder import plot_telemetry_trace
 from core.export_manager import export_to_docx, export_to_pdf
 from core.database_manager import F1Database
 from core.weekend_detector import detect_weekend_type, ensure_sessions_loaded, get_session_display_names, _get_event, _get_sessions
@@ -47,6 +48,8 @@ for key, default in [
     ("gp_input_raw", ""),
     ("gp_display", None),
     ("gp_notes", []),
+    ("tel_chart", None),
+    ("tel_ai_text", None),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -457,48 +460,7 @@ else:
     """, unsafe_allow_html=True)
     st.stop()
 
-# Render chat history
-_last_asst_idx = max(
-    (j for j, m in enumerate(st.session_state.messages) if m["role"] == "assistant"),
-    default=-1,
-)
-for i, msg in enumerate(st.session_state.messages):
-    if msg["role"] == "system":
-        st.markdown(
-            f'<div style="text-align:center;color:#444;font-size:0.78rem;'
-            f'padding:6px 12px;margin:4px 0;">— {msg["content"]} —</div>',
-            unsafe_allow_html=True,
-        )
-    else:
-        _avatar = "📊" if msg["role"] == "assistant" else "🎙️"
-        with st.chat_message(msg["role"], avatar=_avatar):
-            st.markdown(msg["content"])
-            if msg["role"] == "assistant" and msg.get("chart") is not None:
-                st.plotly_chart(msg["chart"], width="stretch", key=f"chart_{i}")
-            if msg["role"] == "assistant" and i == _last_asst_idx and st.session_state.gp_loaded:
-                _exp_msgs = []
-                if i > 0 and st.session_state.messages[i - 1]["role"] == "user":
-                    _exp_msgs.append(st.session_state.messages[i - 1])
-                _exp_msgs.append(msg)
-                _gp_ex = st.session_state.gp_display or st.session_state.gp_loaded
-                _yr_ex = st.session_state.year
-                _fname = f"analisis_{_gp_ex.replace(' ', '_')}_{_yr_ex}"
-                with st.expander("🗂️ Descargar análisis", expanded=False):
-                    _c1, _c2 = st.columns(2)
-                    with _c1:
-                        st.download_button("📄 DOCX",
-                            data=export_to_docx(_exp_msgs, _gp_ex, _yr_ex),
-                            file_name=f"{_fname}.docx",
-                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                            key=f"exp_docx_{i}")
-                    with _c2:
-                        st.download_button("📄 PDF",
-                            data=export_to_pdf(_exp_msgs, _gp_ex, _yr_ex),
-                            file_name=f"{_fname}.pdf",
-                            mime="application/pdf",
-                            key=f"exp_pdf_{i}")
-
-# Handle comparison data loading
+# Handle comparison data loading — before tabs, triggers rerun
 if st.session_state.pending_compare:
     st.session_state.pending_compare = False
     gp_name = st.session_state.gp_loaded
@@ -520,87 +482,290 @@ if st.session_state.pending_compare:
     st.session_state.messages.append({"role": "system", "content": sys_msg})
     st.rerun()
 
-# Resolve prompt source (sidebar button or chat input)
-prompt_to_send = None
-if st.session_state.pending_prompt:
-    prompt_to_send = st.session_state.pending_prompt
-    st.session_state.pending_prompt = None
+# ── Tabs ──────────────────────────────────────────────────────────────────────
+tab_chat, tab_telemetry = st.tabs(["💬 Chat", "📡 Telemetría"])
 
-if chat_input := st.chat_input("Hacé una pregunta sobre el GP..."):
-    prompt_to_send = chat_input
+with tab_chat:
+    # Render chat history
+    _last_asst_idx = max(
+        (j for j, m in enumerate(st.session_state.messages) if m["role"] == "assistant"),
+        default=-1,
+    )
+    for i, msg in enumerate(st.session_state.messages):
+        if msg["role"] == "system":
+            st.markdown(
+                f'<div style="text-align:center;color:#444;font-size:0.78rem;'
+                f'padding:6px 12px;margin:4px 0;">— {msg["content"]} —</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            _avatar = "📊" if msg["role"] == "assistant" else "🎙️"
+            with st.chat_message(msg["role"], avatar=_avatar):
+                st.markdown(msg["content"])
+                if msg["role"] == "assistant" and msg.get("chart") is not None:
+                    st.plotly_chart(msg["chart"], width="stretch", key=f"chart_{i}")
+                if msg["role"] == "assistant" and i == _last_asst_idx and st.session_state.gp_loaded:
+                    _exp_msgs = []
+                    if i > 0 and st.session_state.messages[i - 1]["role"] == "user":
+                        _exp_msgs.append(st.session_state.messages[i - 1])
+                    _exp_msgs.append(msg)
+                    _gp_ex = st.session_state.gp_display or st.session_state.gp_loaded
+                    _yr_ex = st.session_state.year
+                    _fname = f"analisis_{_gp_ex.replace(' ', '_')}_{_yr_ex}"
+                    with st.expander("🗂️ Descargar análisis", expanded=False):
+                        _c1, _c2 = st.columns(2)
+                        with _c1:
+                            st.download_button("📄 DOCX",
+                                data=export_to_docx(_exp_msgs, _gp_ex, _yr_ex),
+                                file_name=f"{_fname}.docx",
+                                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                key=f"exp_docx_{i}")
+                        with _c2:
+                            st.download_button("📄 PDF",
+                                data=export_to_pdf(_exp_msgs, _gp_ex, _yr_ex),
+                                file_name=f"{_fname}.pdf",
+                                mime="application/pdf",
+                                key=f"exp_pdf_{i}")
 
-# Process
-if prompt_to_send:
-    _log.info("query | gp=%s prompt_len=%d", st.session_state.gp_loaded, len(prompt_to_send))
-    st.session_state.messages.append({"role": "user", "content": prompt_to_send})
-    with st.chat_message("user", avatar="🎙️"):
-        st.markdown(prompt_to_send)
+    # Resolve prompt source (sidebar button or chat input)
+    prompt_to_send = None
+    if st.session_state.pending_prompt:
+        prompt_to_send = st.session_state.pending_prompt
+        st.session_state.pending_prompt = None
 
-    if prompt_to_send.strip().lower().startswith("nota:"):
-        _note_content = prompt_to_send.split(":", 1)[1].strip()
-        if _note_content:
-            st.session_state.gp_notes.append(_note_content)
-        _sys_note = f"📝 Nota guardada: \"{_note_content}\". Se incluirá en las próximas consultas."
-        st.session_state.messages.append({"role": "system", "content": _sys_note})
-        st.rerun()
-    with st.chat_message("assistant", avatar="📊"):
-        try:
-            _status = st.empty()
-            _status.info("🔍 Analizando datos del GP...")
-            def _update_status(msg):
-                _status.info(msg)
-            with st.spinner("Procesando..."):
-                result = st.session_state.agent.send_message(
-                    prompt_to_send,
-                    st.session_state.gp_loaded,
-                    st.session_state.year,
-                    compare_previous_year=st.session_state.compare_previous_year,
+    if chat_input := st.chat_input("Hacé una pregunta sobre el GP..."):
+        prompt_to_send = chat_input
+
+    # Process
+    if prompt_to_send:
+        _log.info("query | gp=%s prompt_len=%d", st.session_state.gp_loaded, len(prompt_to_send))
+        st.session_state.messages.append({"role": "user", "content": prompt_to_send})
+        with st.chat_message("user", avatar="🎙️"):
+            st.markdown(prompt_to_send)
+
+        if prompt_to_send.strip().lower().startswith("nota:"):
+            _note_content = prompt_to_send.split(":", 1)[1].strip()
+            if _note_content:
+                st.session_state.gp_notes.append(_note_content)
+            _sys_note = f"📝 Nota guardada: \"{_note_content}\". Se incluirá en las próximas consultas."
+            st.session_state.messages.append({"role": "system", "content": _sys_note})
+            st.rerun()
+        with st.chat_message("assistant", avatar="📊"):
+            try:
+                _status = st.empty()
+                _status.info("🔍 Analizando datos del GP...")
+                def _update_status(msg):
+                    _status.info(msg)
+                with st.spinner("Procesando..."):
+                    result = st.session_state.agent.send_message(
+                        prompt_to_send,
+                        st.session_state.gp_loaded,
+                        st.session_state.year,
+                        compare_previous_year=st.session_state.compare_previous_year,
+                        user_email=_user_email,
+                        on_status=_update_status,
+                        gp_notes=st.session_state.gp_notes,
+                    )
+                _status.empty()
+                st.markdown(result["text"])
+                if result["chart"] is not None:
+                    st.plotly_chart(result["chart"], width="stretch", key=f"chart_{len(st.session_state.messages)}")
+                if st.session_state.gp_loaded:
+                    _exp_new = [{"role": "user", "content": prompt_to_send},
+                                 {"role": "assistant", "content": result["text"], "chart": result["chart"]}]
+                    _gp_ex_n = st.session_state.gp_display or st.session_state.gp_loaded
+                    _yr_ex_n = st.session_state.year
+                    _fname_n = f"analisis_{_gp_ex_n.replace(' ', '_')}_{_yr_ex_n}"
+                    _new_i   = len(st.session_state.messages)
+                    with st.expander("🗂️ Descargar análisis", expanded=False):
+                        _cn1, _cn2 = st.columns(2)
+                        with _cn1:
+                            st.download_button("📄 DOCX",
+                                data=export_to_docx(_exp_new, _gp_ex_n, _yr_ex_n),
+                                file_name=f"{_fname_n}.docx",
+                                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                key=f"exp_docx_{_new_i}")
+                        with _cn2:
+                            st.download_button("📄 PDF",
+                                data=export_to_pdf(_exp_new, _gp_ex_n, _yr_ex_n),
+                                file_name=f"{_fname_n}.pdf",
+                                mime="application/pdf",
+                                key=f"exp_pdf_{_new_i}")
+                st.session_state.messages.append({"role": "assistant", "content": result["text"], "chart": result["chart"]})
+            except Exception as e:
+                _is_overloaded = (
+                    "529" in str(e) or "overloaded_error" in str(e).lower()
+                    or (hasattr(e, "status_code") and e.status_code == 529)
+                )
+                _is_usage_limit = (
+                    hasattr(e, "status_code") and e.status_code == 400
+                    and "api usage limits" in str(e).lower()
+                )
+                if _is_overloaded:
+                    error_msg = "⏳ El servicio está temporalmente saturado. Esperá unos segundos y volvé a intentar la misma pregunta."
+                    st.warning(error_msg)
+                elif _is_usage_limit:
+                    error_msg = "⚠️ El servicio de análisis está temporalmente no disponible. Por favor intentá más tarde."
+                    st.warning(error_msg)
+                else:
+                    error_msg = f"Error al procesar la consulta: {e}"
+                    st.error(error_msg)
+                st.session_state.messages.append({"role": "assistant", "content": error_msg})
+
+with tab_telemetry:
+    _gp  = st.session_state.gp_loaded
+    _yr  = st.session_state.year
+    _db_tel = F1Database()
+
+    # Drivers list — desde la primera sesión disponible con datos
+    _tel_avail = [
+        code for code, _ in st.session_state.sessions_available
+        if st.session_state.sessions_db_status.get(code, False)
+        and code in ("Q", "R", "FP1", "FP2", "FP3")
+    ]
+    drivers_list = []
+    for _pref in ("Q", "R", "FP1", "FP2", "FP3"):
+        _pref_sid = _db_tel.get_session_id(_yr, _gp, _pref)
+        if _pref_sid:
+            _pref_laps = _db_tel.get_laps_data(_pref_sid)
+            drivers_list = sorted(_pref_laps["driver"].dropna().unique().tolist())
+            break
+
+    # ── Row 1: selección de pilotos ───────────────────────────────────────────
+    _dc1, _dc2 = st.columns(2)
+    with _dc1:
+        drv1 = st.selectbox("Piloto 1", drivers_list or ["—"], key="tel_drv1")
+    with _dc2:
+        drv2 = st.selectbox(
+            "Piloto 2 (opcional)",
+            ["— comparar con vuelta anterior —"] + drivers_list,
+            key="tel_drv2",
+        )
+
+    # ── Row 2: sesión + vueltas ───────────────────────────────────────────────
+    _sc1, _sc2, _sc3 = st.columns(3)
+    with _sc1:
+        sel_session = st.selectbox(
+            "Sesión",
+            _tel_avail or ["Q", "R", "FP1", "FP2", "FP3"],
+            key="tel_session",
+        )
+
+    # Lap options para el piloto 1 en la sesión seleccionada
+    _sel_sid = _db_tel.get_session_id(_yr, _gp, sel_session)
+    lap_options: list[str] = []
+    if _sel_sid and drivers_list and drv1 != "—":
+        _d1_laps = _db_tel.get_laps_data(_sel_sid)
+        _d1_laps = _d1_laps[
+            (_d1_laps["driver"] == drv1)
+            & _d1_laps["lap_time"].notna()
+            & (_d1_laps["lap_time"] <= 200)
+        ].sort_values("lap_number")
+        lap_options = [
+            f"Vuelta {int(r['lap_number'])} — {r['lap_time']:.3f}s"
+            for _, r in _d1_laps.iterrows()
+        ]
+    with _sc2:
+        st.selectbox(
+            "Vuelta piloto 1",
+            lap_options or ["(auto — más rápida)"],
+            key="tel_lap1",
+        )
+    with _sc3:
+        st.selectbox(
+            "Vuelta referencia",
+            ["Vuelta anterior (auto)"] + lap_options,
+            key="tel_lap_ref",
+        )
+
+    # Parsear números de vuelta seleccionados para modo explícito
+    def _parse_lap_num(s: str) -> int | None:
+        _m = re.search(r'Vuelta\s+(\d+)', s or "")
+        return int(_m.group(1)) if _m else None
+
+    _lap1_str   = st.session_state.get("tel_lap1", "")
+    _lapref_str = st.session_state.get("tel_lap_ref", "")
+    _lap1_num   = _parse_lap_num(_lap1_str)
+    if _lap1_num and _lapref_str == "Vuelta anterior (auto)":
+        _lapref_num = _lap1_num - 1 if _lap1_num > 1 else None
+    else:
+        _lapref_num = _parse_lap_num(_lapref_str)
+    _explicit_laps: list[int] | None = [n for n in [_lap1_num, _lapref_num] if n is not None] or None
+
+    # ── Canales ───────────────────────────────────────────────────────────────
+    st.markdown("**Canales**")
+    _ch1, _ch2, _ch3, _ch4, _ch5, _ch6 = st.columns(6)
+    with _ch1: ch_speed    = st.checkbox("Velocidad",    value=True,  key="tel_ch_speed")
+    with _ch2: ch_throttle = st.checkbox("Acelerador",   value=True,  key="tel_ch_throttle")
+    with _ch3: ch_brake    = st.checkbox("Freno",        value=True,  key="tel_ch_brake")
+    with _ch4: ch_gear     = st.checkbox("Marcha",       value=True,  key="tel_ch_gear")
+    with _ch5: ch_rpm      = st.checkbox("RPM",          value=False, key="tel_ch_rpm")
+    with _ch6: ch_gps      = st.checkbox("Posición GPS", value=False, key="tel_ch_gps")
+
+    # ── Zona de circuito (opcional) ───────────────────────────────────────────
+    with st.expander("🔍 Zona de circuito (opcional)"):
+        _z1, _z2, _z3 = st.columns(3)
+        with _z1: zone_from  = st.number_input("Desde (m)", 0, 10000, 0, 50, key="tel_zone_from")
+        with _z2: zone_to    = st.number_input("Hasta (m)", 0, 10000, 0, 50, key="tel_zone_to")
+        with _z3: zone_label = st.text_input("Descripción zona",
+                                              placeholder="ej: Curva 9, chicane final...",
+                                              key="tel_zone_label")
+    _dist_min = float(zone_from) if zone_to > zone_from else None
+    _dist_max = float(zone_to)   if zone_to > zone_from else None
+
+    # ── Botón generar ─────────────────────────────────────────────────────────
+    if st.button("📡 Generar gráfico", type="primary", key="tel_gen_btn") and drivers_list and drv1 != "—":
+        _compare_mode = drv2 == "— comparar con vuelta anterior —"
+        _tel_drivers_call = [drv1] if _compare_mode else [drv1, drv2]
+        _lap_nums_call = _explicit_laps if _compare_mode else None
+        # Si hay vueltas explícitas no hace falta el sentinel; si no, activar compare_laps_mode automático
+        _qs_call = (
+            None if (_compare_mode and _lap_nums_call)
+            else ("Q3" if _compare_mode and sel_session == "Q"
+                  else ("COMPARE" if _compare_mode else None))
+        )
+        with st.spinner("📡 Descargando telemetría de FastF1... (puede tardar ~10s)"):
+            _tel_fig = plot_telemetry_trace(
+                None, _gp, _yr, _tel_drivers_call,
+                sel_session, _qs_call, _dist_min, _dist_max, _lap_nums_call,
+            )
+        st.session_state.tel_chart   = _tel_fig
+        st.session_state.tel_ai_text = None
+        if _tel_fig is None:
+            st.warning("No se pudo cargar la telemetría. Esperá unos minutos y reintentá.")
+
+    # ── Mostrar gráfico ───────────────────────────────────────────────────────
+    if st.session_state.tel_chart is not None:
+        _fig = st.session_state.tel_chart
+        # Aplicar visibilidad de canales (orden por entry: speed, throttle, brake, gear)
+        _ch_visible = [ch_speed, ch_throttle, ch_brake, ch_gear]
+        for _tidx, _trace in enumerate(_fig.data):
+            _trace.visible = _ch_visible[_tidx % 4]
+        st.plotly_chart(_fig, use_container_width=True, key="tel_plotly_chart")
+
+        # ── Analizar con IA ───────────────────────────────────────────────────
+        if st.button("🤖 Analizar con IA ↗", key="tel_ai_btn"):
+            _is_compare = st.session_state.get("tel_drv2") == "— comparar con vuelta anterior —"
+            _drv_label  = drv1 if _is_compare else f"{drv1} vs {st.session_state.get('tel_drv2', '')}"
+            _zone_sfx   = (
+                f" Zona analizada: {st.session_state.get('tel_zone_label') or f'{int(zone_from)}-{int(zone_to)}m'}."
+                if _dist_max else ""
+            )
+            _ai_prompt = (
+                f"Analizá la telemetría de {_drv_label} en {sel_session} "
+                f"de {_gp} {_yr}.{_zone_sfx} "
+                f"Describí diferencias en velocidad, acelerador, freno y marcha."
+            )
+            with st.spinner("🤖 Analizando con IA..."):
+                _ai_res = st.session_state.agent.send_message(
+                    _ai_prompt, _gp, _yr,
+                    compare_previous_year=False,
                     user_email=_user_email,
-                    on_status=_update_status,
+                    on_status=lambda _: None,
                     gp_notes=st.session_state.gp_notes,
                 )
-            _status.empty()
-            st.markdown(result["text"])
-            if result["chart"] is not None:
-                st.plotly_chart(result["chart"], width="stretch", key=f"chart_{len(st.session_state.messages)}")
-            if st.session_state.gp_loaded:
-                _exp_new = [{"role": "user", "content": prompt_to_send},
-                             {"role": "assistant", "content": result["text"], "chart": result["chart"]}]
-                _gp_ex_n = st.session_state.gp_display or st.session_state.gp_loaded
-                _yr_ex_n = st.session_state.year
-                _fname_n = f"analisis_{_gp_ex_n.replace(' ', '_')}_{_yr_ex_n}"
-                _new_i   = len(st.session_state.messages)
-                with st.expander("🗂️ Descargar análisis", expanded=False):
-                    _cn1, _cn2 = st.columns(2)
-                    with _cn1:
-                        st.download_button("📄 DOCX",
-                            data=export_to_docx(_exp_new, _gp_ex_n, _yr_ex_n),
-                            file_name=f"{_fname_n}.docx",
-                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                            key=f"exp_docx_{_new_i}")
-                    with _cn2:
-                        st.download_button("📄 PDF",
-                            data=export_to_pdf(_exp_new, _gp_ex_n, _yr_ex_n),
-                            file_name=f"{_fname_n}.pdf",
-                            mime="application/pdf",
-                            key=f"exp_pdf_{_new_i}")
-            st.session_state.messages.append({"role": "assistant", "content": result["text"], "chart": result["chart"]})
-        except Exception as e:
-            _is_overloaded = (
-                "529" in str(e) or "overloaded_error" in str(e).lower()
-                or (hasattr(e, "status_code") and e.status_code == 529)
-            )
-            _is_usage_limit = (
-                hasattr(e, "status_code") and e.status_code == 400
-                and "api usage limits" in str(e).lower()
-            )
-            if _is_overloaded:
-                error_msg = "⏳ El servicio está temporalmente saturado. Esperá unos segundos y volvé a intentar la misma pregunta."
-                st.warning(error_msg)
-            elif _is_usage_limit:
-                error_msg = "⚠️ El servicio de análisis está temporalmente no disponible. Por favor intentá más tarde."
-                st.warning(error_msg)
-            else:
-                error_msg = f"Error al procesar la consulta: {e}"
-                st.error(error_msg)
-            st.session_state.messages.append({"role": "assistant", "content": error_msg})
+            st.session_state.tel_ai_text = _ai_res["text"]
+
+        if st.session_state.tel_ai_text:
+            st.divider()
+            st.markdown(st.session_state.tel_ai_text)
