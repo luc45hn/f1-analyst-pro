@@ -15,6 +15,16 @@ from core.logger import get_logger
 _log = get_logger(__name__)
 
 
+# ── Cached DB helpers (evitan roundtrips repetidos dentro del mismo render) ───
+@st.cache_data(ttl=300)
+def _cached_session_id(year: int, event_name: str, session_type: str):
+    return F1Database().get_session_id(year, event_name, session_type)
+
+@st.cache_data(ttl=300)
+def _cached_laps_data(session_id: int):
+    return F1Database().get_laps_data(session_id)
+
+
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="F1 Analyst Pro",
@@ -622,7 +632,6 @@ with tab_chat:
 with tab_telemetry:
     _gp  = st.session_state.gp_loaded
     _yr  = st.session_state.year
-    _db_tel = F1Database()
 
     # Drivers list — desde la primera sesión disponible con datos
     _tel_avail = [
@@ -632,9 +641,9 @@ with tab_telemetry:
     ]
     drivers_list = []
     for _pref in ("Q", "R", "FP1", "FP2", "FP3"):
-        _pref_sid = _db_tel.get_session_id(_yr, _gp, _pref)
+        _pref_sid = _cached_session_id(_yr, _gp, _pref)
         if _pref_sid:
-            _pref_laps = _db_tel.get_laps_data(_pref_sid)
+            _pref_laps = _cached_laps_data(_pref_sid)
             drivers_list = sorted(_pref_laps["driver"].dropna().unique().tolist())
             break
 
@@ -660,10 +669,10 @@ with tab_telemetry:
     _compare_mode = drv2 == "— comparar con vuelta anterior —"
 
     # Lap options para el piloto 1 en la sesión seleccionada
-    _sel_sid = _db_tel.get_session_id(_yr, _gp, sel_session)
+    _sel_sid = _cached_session_id(_yr, _gp, sel_session)
     lap_options: list[str] = []
     if _sel_sid and drivers_list and drv1 != "—":
-        _d1_laps = _db_tel.get_laps_data(_sel_sid)
+        _d1_laps = _cached_laps_data(_sel_sid)
         _d1_laps = _d1_laps[
             (_d1_laps["driver"] == drv1)
             & _d1_laps["lap_time"].notna()
@@ -677,7 +686,7 @@ with tab_telemetry:
     # Lap options para el piloto 2 (solo en modo dos pilotos distintos)
     lap_options_p2: list[str] = []
     if not _compare_mode and _sel_sid and drv2 not in ("—", "— comparar con vuelta anterior —"):
-        _d2_laps = _db_tel.get_laps_data(_sel_sid)
+        _d2_laps = _cached_laps_data(_sel_sid)
         _d2_laps = _d2_laps[
             (_d2_laps["driver"] == drv2)
             & _d2_laps["lap_time"].notna()
