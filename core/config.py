@@ -13,7 +13,7 @@ CACHE_DIR    = DATA_DIR / "raw"
 YEAR = int(os.getenv("YEAR", "2026"))
 
 # ── App ───────────────────────────────────────────────────────────────────────
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.4.0"
 
 # ── Usage limits ──────────────────────────────────────────────────────────────
 DAILY_COST_LIMIT_USD = 3.00

@@ -4,7 +4,7 @@
 
 **Note:** All agent responses and the user interface are in Spanish, as the tool is designed for Spanish-speaking journalists and analysts.
 
-[![Version](https://img.shields.io/badge/version-1.3.0-blue)](https://github.com/luc45hn/f1-analyst-pro)
+[![Version](https://img.shields.io/badge/version-1.4.0-blue)](https://github.com/luc45hn/f1-analyst-pro)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.x-red)](https://streamlit.io/)
 [![Claude](https://img.shields.io/badge/Claude-Sonnet%204.6-orange)](https://anthropic.com/)
@@ -53,6 +53,7 @@ The interface includes a welcome screen with example queries for first-time user
 | **Strategy** | Undercut/overcut detection with EXITOSO/FALLIDO verdict, pit stop analysis |
 | **Key moments** | Automatic detection of track limits, pace anomalies (>15% off median), position drops |
 | **Telemetry** | Speed/throttle/brake/gear traces per driver, Q1/Q2/Q3 segment filtering |
+| **Telemetry tab** | Dedicated UI for lap-by-lap telemetry comparison with pilot/session/lap selectors, zone filter by distance, and AI analysis |
 | **Practice sessions** | FP1/FP2/FP3 ingestion and lap time data |
 | **Export** | DOCX and PDF download inline in chat after each assistant response |
 | **Journalist notes** | Contextual notes via `Nota:` prefix in chat, persisted per session |
@@ -98,7 +99,7 @@ The interface includes a welcome screen with example queries for first-time user
 | File | Responsibility |
 |---|---|
 | `app.py` | Streamlit UI — login screen, chat interface, sidebar menu, chart rendering, session state management |
-| `core/chart_builder.py` | Plotly chart generation — lap times, sector comparisons, tyre degradation, pit stop strategy, telemetry traces |
+| `core/chart_builder.py` | Plotly chart generation — lap times, sector comparisons, tyre degradation, pit stop strategy, telemetry traces with distance range filtering (`distance_min`/`distance_max`) and explicit lap selection per driver (`explicit_lap_p1`/`explicit_lap_p2`) |
 | `core/export_manager.py` | DOCX and PDF export — formats chat responses as structured documents using python-docx and reportlab |
 
 ### Agent
@@ -439,8 +440,19 @@ f1-analyst-pro/
 
 ---
 
+## Known Limitations
+
+- Streamlit Cloud restricts outbound connections to FastF1 for new GPs — workaround: run `python scripts/ingest_gp.py 'GP Name'` locally before the weekend
+- Channel telemetry (Speed/Throttle/Brake/Gear) is fetched live from FastF1, not persisted in DB — first request after server restart may be slow
+- Zone description field (free text) does not filter the chart — only numeric distance range (meters) filters the telemetry view
+
+---
+
 ## Roadmap
 
+- [x] Dedicated telemetry UI tab with lap comparison
+- [x] Zone filtering by distance range
+- [x] Incident analysis via same-driver lap comparison
 - [x] Daily cost limit per user (configurable, default $2.00/day)
 - [x] FP1/FP2/FP3 ingestion and analysis
 - [x] Sector-level telemetry overlays (speed traces)
