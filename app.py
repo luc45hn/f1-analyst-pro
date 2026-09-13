@@ -985,6 +985,26 @@ with tab_telemetry:
             )
         else:
             st.session_state.tel_warning_msg = None
+            # Log generación de gráfico de telemetría (sin costo LLM)
+            _tel_drv_label = " vs ".join(_tel_drivers_call)
+            _tel_lap_label = (
+                f"Vueltas {_lap_nums_call[0]} vs {_lap_nums_call[1]}"
+                if _compare_mode and _lap_nums_call and len(_lap_nums_call) == 2
+                else f"Vuelta {_explicit_lap_p1} vs {_explicit_lap_p2}"
+                if not _compare_mode and (_explicit_lap_p1 or _explicit_lap_p2)
+                else "mejor vuelta"
+            )
+            _tel_query_str = f"[TELEMETRY] {_tel_drv_label} | {sel_session} | {_tel_lap_label}"
+            try:
+                F1Database().log_query(
+                    user_email=_user_email, gp_name=_gp, year=_yr,
+                    prompt=_tel_query_str,
+                    intent={"source": "telemetry", "session": sel_session, "drivers": _tel_drivers_call},
+                    has_chart=True, input_tokens=0, output_tokens=0,
+                    cost_usd=0.0, elapsed_seconds=0.0,
+                )
+            except Exception:
+                pass
 
     if st.session_state.get("tel_warning_msg"):
         st.warning(st.session_state.tel_warning_msg)
