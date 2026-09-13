@@ -91,33 +91,68 @@ if not st.session_state.supabase_session:
 
 if not st.session_state.supabase_session:
     if st.session_state.show_login:
-        # ── Formulario de login ────────────────────────────────────────────────
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
+        # ── Login split layout ─────────────────────────────────────────────────
+        # Topbar con botón Volver
+        _tb_back, _tb_brand = st.columns([1, 5])
+        with _tb_back:
+            if st.button("← Volver", key="login_back"):
+                st.session_state.show_login = False
+                st.rerun()
+        with _tb_brand:
             st.markdown("""
-                <div style="text-align:center;padding:2rem 0 2rem 0;">
-                    <div style="width:48px;height:48px;background:#E24B4A;border-radius:10px;
-                                display:inline-flex;align-items:center;justify-content:center;
-                                font-size:20px;font-weight:600;color:white;margin-bottom:16px;">F1</div>
-                    <div style="font-size:22px;font-weight:500;margin-bottom:6px;">F1 Analyst Pro</div>
-                    <div style="font-size:13px;color:#666;">
-                        Análisis técnico de telemetría · Temporada 2026
-                    </div>
+            <div style="display:flex;align-items:center;gap:10px;padding:0.5rem 0;">
+                <div style="width:30px;height:30px;background:#E24B4A;border-radius:6px;
+                            display:inline-flex;align-items:center;justify-content:center;
+                            font-size:12px;font-weight:700;color:white;">F1</div>
+                <span style="font-size:1rem;font-weight:600;">F1 Analyst Pro</span>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("<div style='height:1.5rem'></div>", unsafe_allow_html=True)
+
+        _lcol, _rcol = st.columns([1, 1], gap="large")
+
+        with _lcol:
+            st.markdown("""
+            <div style="padding:2rem 1rem 2rem 0;">
+                <div style="font-size:11px;font-weight:700;letter-spacing:2px;
+                            color:#E24B4A;text-transform:uppercase;margin-bottom:1rem;">
+                    TELEMETRÍA · ESTRATEGIA · IA
                 </div>
+                <div style="font-size:1.9rem;font-weight:800;letter-spacing:-0.5px;
+                            line-height:1.2;margin-bottom:1rem;">
+                    Analizá datos de F1 en lenguaje natural
+                </div>
+                <div style="font-size:0.95rem;color:var(--color-text-secondary);
+                            line-height:1.6;margin-bottom:1.8rem;">
+                    Telemetría real de FastF1 con análisis técnico generado con IA.
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            st.markdown("""
+- 📡 **Telemetría de canal** — velocidad, acelerador y freno por metro de pista
+- 🔁 **Comparación de vueltas** — dos pilotos o dos vueltas del mismo piloto
+- 🏁 **Estrategia de carrera** — undercut, overcut y momentos clave automáticos
+- 💬 **Preguntá en lenguaje natural** — sin código, sin exportar nada
+""")
+
+        with _rcol:
+            st.markdown("""
+            <div style="padding:2rem 0 0.5rem 0;">
+                <div style="font-size:1.4rem;font-weight:700;margin-bottom:0.25rem;">Ingresar</div>
+                <div style="font-size:0.85rem;color:var(--color-text-secondary);margin-bottom:1.5rem;">
+                    Acceso por invitación
+                </div>
+            </div>
             """, unsafe_allow_html=True)
 
             if st.session_state.session_expired:
                 st.warning("⏱️ Tu sesión expiró. Ingresá nuevamente para continuar.")
 
             with st.form("login_form"):
-                email     = st.text_input("Email")
-                password  = st.text_input("Contraseña", type="password")
+                email    = st.text_input("Email")
+                password = st.text_input("Contraseña", type="password")
                 submitted = st.form_submit_button("Iniciar sesión", width="stretch")
-                st.markdown(
-                    '<div style="text-align:center;font-size:11px;color:#444;padding-top:8px;">'
-                    'Acceso restringido · Solo usuarios autorizados</div>',
-                    unsafe_allow_html=True,
-                )
 
             if submitted:
                 try:
@@ -136,6 +171,12 @@ if not st.session_state.supabase_session:
                     st.session_state.auth_error = str(e)
             if st.session_state.auth_error:
                 st.error(f"❌ {st.session_state.auth_error}")
+            st.markdown(
+                '<div style="font-size:0.8rem;color:#666;margin-top:1rem;">'
+                '¿No tenés acceso? <a href="https://forms.gle/XFmY2qJvCNrvNjPv7" target="_blank" '
+                'style="color:#E24B4A;text-decoration:none;">Solicitalo acá →</a></div>',
+                unsafe_allow_html=True,
+            )
 
     else:
         # ── Landing page ───────────────────────────────────────────────────────
