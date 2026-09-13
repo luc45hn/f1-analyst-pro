@@ -1,4 +1,5 @@
 import io
+import logging
 import re
 from datetime import date
 from xml.sax.saxutils import escape as _xml_escape
@@ -10,6 +11,8 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
+
+_log = logging.getLogger(__name__)
 
 
 def _strip_markdown(text: str) -> str:
@@ -101,8 +104,11 @@ def export_to_docx(messages: list[dict], gp_name: str, year: int) -> bytes:
                                     cell.paragraphs[0].runs[0].bold = True
             chart = msg.get("chart")
             if chart is not None:
-                img_bytes = chart.to_image(format="png", width=900, height=500, scale=2)
-                doc.add_picture(io.BytesIO(img_bytes), width=doc.sections[0].page_width - 3600000)
+                try:
+                    img_bytes = chart.to_image(format="png", width=900, height=500, scale=2)
+                    doc.add_picture(io.BytesIO(img_bytes), width=doc.sections[0].page_width - 3600000)
+                except Exception as exc:
+                    _log.warning("export_docx | kaleido falló, se omite el gráfico: %s", exc)
             doc.add_paragraph("")
 
     buf = io.BytesIO()
@@ -161,8 +167,11 @@ def export_to_pdf(messages: list[dict], gp_name: str, year: int) -> bytes:
                         story.append(Spacer(1, 0.2 * cm))
             chart = msg.get("chart")
             if chart is not None:
-                img_bytes = chart.to_image(format="png", width=900, height=500, scale=2)
-                story.append(Image(io.BytesIO(img_bytes), width=15 * cm, height=8.3 * cm))
+                try:
+                    img_bytes = chart.to_image(format="png", width=900, height=500, scale=2)
+                    story.append(Image(io.BytesIO(img_bytes), width=15 * cm, height=8.3 * cm))
+                except Exception as exc:
+                    _log.warning("export_pdf | kaleido falló, se omite el gráfico: %s", exc)
             story.append(Spacer(1, 0.3 * cm))
 
     doc.build(story)
