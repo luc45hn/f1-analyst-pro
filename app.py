@@ -280,6 +280,20 @@ if not st.session_state.supabase_session:
 
         st.markdown("<div style='height:1.5rem'></div>", unsafe_allow_html=True)
 
+        # Video demo
+        st.caption("Demo — 2 minutos")
+        import streamlit.components.v1 as components
+        components.html(
+            '<div style="position: relative; padding-bottom: 56.25%; height: 0;">'
+            '<iframe src="https://www.loom.com/embed/d746642f0e0e4de2bb33e3ae71272eaa" '
+            'frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen '
+            'style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"></iframe>'
+            '</div>',
+            height=700,
+        )
+
+        st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
+
         # Features
         _f1, _f2, _f3 = st.columns(3)
         with _f1:
