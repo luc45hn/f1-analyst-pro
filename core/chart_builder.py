@@ -383,6 +383,9 @@ def plot_telemetry_trace(
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
     fig.update_xaxes(title_text="Distancia (m)", row=4, col=1)
+    if not fig.data:
+        _log.warning("telemetry | no traces added — returning None")
+        return None
     _log.debug("telemetry | figure built OK | traces=%d", len(fig.data))
     return fig
 

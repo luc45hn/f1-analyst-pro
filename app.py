@@ -61,6 +61,7 @@ for key, default in [
     ("tel_chart", None),
     ("tel_ai_text", None),
     ("show_login", False),
+    ("tel_warning_msg", None),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -959,7 +960,20 @@ with tab_telemetry:
         st.session_state.tel_chart   = _tel_fig
         st.session_state.tel_ai_text = None
         if _tel_fig is None:
-            st.warning("No se pudo cargar la telemetría. Esperá unos minutos y reintentá.")
+            _warn_drv  = ", ".join(_tel_drivers_call)
+            _warn_sess = {"Q": "Qualifying", "R": "Carrera", "FP1": "Practice 1",
+                          "FP2": "Practice 2", "FP3": "Practice 3",
+                          "SQ": "Sprint Qualifying", "SS": "Sprint Race"}.get(sel_session, sel_session)
+            st.session_state.tel_warning_msg = (
+                f"No se encontraron datos de telemetría para **{_warn_drv}** en **{_warn_sess}**. "
+                "Es posible que este piloto no haya participado en esta sesión — "
+                "en FP1 puede haber un rookie sustituto por reglamento FIA."
+            )
+        else:
+            st.session_state.tel_warning_msg = None
+
+    if st.session_state.get("tel_warning_msg"):
+        st.warning(st.session_state.tel_warning_msg)
 
     # ── Mostrar gráfico ───────────────────────────────────────────────────────
     if st.session_state.tel_chart is not None:
