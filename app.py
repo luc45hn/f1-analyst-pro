@@ -60,6 +60,7 @@ for key, default in [
     ("gp_notes", []),
     ("tel_chart", None),
     ("tel_ai_text", None),
+    ("show_login", False),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -89,50 +90,202 @@ if not st.session_state.supabase_session:
         _log.warning("No se pudo restaurar sesión desde localStorage")
 
 if not st.session_state.supabase_session:
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.markdown("""
-            <div style="text-align:center;padding:2rem 0 2rem 0;">
-                <div style="width:48px;height:48px;background:#E24B4A;border-radius:10px;
-                            display:inline-flex;align-items:center;justify-content:center;
-                            font-size:20px;font-weight:600;color:white;margin-bottom:16px;">F1</div>
-                <div style="font-size:22px;font-weight:500;margin-bottom:6px;">F1 Analyst Pro</div>
-                <div style="font-size:13px;color:#666;">
-                    Análisis técnico de telemetría · Temporada 2026
+    if st.session_state.show_login:
+        # ── Formulario de login ────────────────────────────────────────────────
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.markdown("""
+                <div style="text-align:center;padding:2rem 0 2rem 0;">
+                    <div style="width:48px;height:48px;background:#E24B4A;border-radius:10px;
+                                display:inline-flex;align-items:center;justify-content:center;
+                                font-size:20px;font-weight:600;color:white;margin-bottom:16px;">F1</div>
+                    <div style="font-size:22px;font-weight:500;margin-bottom:6px;">F1 Analyst Pro</div>
+                    <div style="font-size:13px;color:#666;">
+                        Análisis técnico de telemetría · Temporada 2026
+                    </div>
                 </div>
-            </div>
+            """, unsafe_allow_html=True)
+
+            if st.session_state.session_expired:
+                st.warning("⏱️ Tu sesión expiró. Ingresá nuevamente para continuar.")
+
+            with st.form("login_form"):
+                email     = st.text_input("Email")
+                password  = st.text_input("Contraseña", type="password")
+                submitted = st.form_submit_button("Iniciar sesión", width="stretch")
+                st.markdown(
+                    '<div style="text-align:center;font-size:11px;color:#444;padding-top:8px;">'
+                    'Acceso restringido · Solo usuarios autorizados</div>',
+                    unsafe_allow_html=True,
+                )
+
+            if submitted:
+                try:
+                    resp = _sb.auth.sign_in_with_password({"email": email, "password": password})
+                    st.session_state.supabase_session = resp.session
+                    local_storage.setItem("f1_session", {
+                        "access_token": resp.session.access_token,
+                        "refresh_token": resp.session.refresh_token,
+                    })
+                    st.session_state.auth_error = None
+                    st.session_state.session_expired = False
+                    _log.info("login success | email=%s", email)
+                    st.rerun()
+                except Exception as e:
+                    _log.warning("login failed | email=%s error=%s", email, e)
+                    st.session_state.auth_error = str(e)
+            if st.session_state.auth_error:
+                st.error(f"❌ {st.session_state.auth_error}")
+
+    else:
+        # ── Landing page ───────────────────────────────────────────────────────
+        st.markdown("""
+        <style>
+        .lp-topbar {
+            display: flex; align-items: center; gap: 10px;
+            padding: 1.2rem 0 2rem 0;
+        }
+        .lp-f1-badge {
+            width: 36px; height: 36px; background: #E24B4A; border-radius: 8px;
+            display: inline-flex; align-items: center; justify-content: center;
+            font-size: 14px; font-weight: 700; color: white; flex-shrink: 0;
+        }
+        .lp-brand { font-size: 1.15rem; font-weight: 600; }
+        .lp-hero { text-align: center; padding: 2.5rem 0 2rem 0; max-width: 680px; margin: 0 auto; }
+        .lp-tag {
+            display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: 2px;
+            color: #E24B4A; text-transform: uppercase; margin-bottom: 1rem;
+        }
+        .lp-title {
+            font-size: 2.4rem; font-weight: 800; letter-spacing: -1px;
+            line-height: 1.15; margin-bottom: 1rem;
+        }
+        .lp-subtitle {
+            font-size: 1.05rem; color: var(--color-text-secondary);
+            line-height: 1.6; margin-bottom: 2rem;
+        }
+.lp-chat-wrap {
+            background: #111; border: 1px solid #222; border-radius: 12px;
+            padding: 1.5rem; margin-top: 0;
+        }
+        .lp-chat-q {
+            background: #1e1e1e; border-radius: 8px; padding: 0.7rem 1rem;
+            font-size: 0.9rem; color: #ccc; margin-bottom: 1rem;
+            border-left: 3px solid #E24B4A;
+        }
+        .lp-chat-a {
+            font-size: 0.88rem; color: #aaa; line-height: 1.65;
+        }
+        .lp-verdict {
+            display: inline-block; background: #1a3a1a; color: #4caf50;
+            border: 1px solid #2a5a2a; border-radius: 6px;
+            padding: 4px 10px; font-size: 0.8rem; font-weight: 700;
+            letter-spacing: 0.5px; margin: 0.4rem 0;
+        }
+        .lp-features { padding: 1.5rem 0 2rem 0; }
+        .lp-feature-icon { font-size: 1.6rem; margin-bottom: 0.5rem; }
+        .lp-feature-title { font-weight: 700; margin-bottom: 0.3rem; font-size: 0.95rem; }
+        .lp-feature-desc { font-size: 0.85rem; color: var(--color-text-secondary); line-height: 1.5; }
+        .lp-footer {
+            text-align: center; font-size: 0.75rem; color: #555;
+            padding: 2rem 0 1rem 0; border-top: 1px solid #1e1e1e; margin-top: 1rem;
+        }
+        </style>
         """, unsafe_allow_html=True)
 
-        if st.session_state.session_expired:
-            st.warning("⏱️ Tu sesión expiró. Ingresá nuevamente para continuar.")
+        # Topbar
+        st.markdown("""
+        <div class="lp-topbar">
+            <div class="lp-f1-badge">F1</div>
+            <span class="lp-brand">F1 Analyst Pro</span>
+        </div>
+        """, unsafe_allow_html=True)
 
-        with st.form("login_form"):
-            email     = st.text_input("Email")
-            password  = st.text_input("Contraseña", type="password")
-            submitted = st.form_submit_button("Iniciar sesión", width="stretch")
-            st.markdown(
-                '<div style="text-align:center;font-size:11px;color:#444;padding-top:8px;">'
-                'Acceso restringido · Solo usuarios autorizados</div>',
-                unsafe_allow_html=True,
-            )
+        # Hero
+        st.markdown("""
+        <div class="lp-hero">
+            <div class="lp-tag">Telemetría · Estrategia · IA</div>
+            <div class="lp-title">Analizá datos de F1 en lenguaje natural</div>
+            <div class="lp-subtitle">
+                Telemetría real de FastF1, análisis de estrategia y narrativa técnica generada con IA.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-        if submitted:
-            try:
-                resp = _sb.auth.sign_in_with_password({"email": email, "password": password})
-                st.session_state.supabase_session = resp.session
-                local_storage.setItem("f1_session", {
-                    "access_token": resp.session.access_token,
-                    "refresh_token": resp.session.refresh_token,
-                })
-                st.session_state.auth_error = None
-                st.session_state.session_expired = False
-                _log.info("login success | email=%s", email)
+        # Galería
+        _g1, _g2 = st.columns(2)
+        with _g1:
+            st.image('docs/RUS-comparison.png')
+        with _g2:
+            st.image('docs/race-strategy.png')
+
+        st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
+
+        # Chat simulado (span completo)
+        st.markdown("""
+        <div class="lp-chat-wrap">
+            <div class="lp-chat-q">¿El undercut de Hamilton sobre Hadjar funcionó en Monaco?</div>
+            <div class="lp-chat-a">
+                Hamilton entró a boxes en la vuelta 34 (VSC window), cubriendo a Hadjar que paró en la 36.
+                La diferencia neta al salir fue de +6.0s a favor de Hamilton, con neumático medio fresco
+                vs el duro de 18 vueltas de Hadjar.<br><br>
+                <span class="lp-verdict">✅ UNDERCUT EXITOSO (+6.0s)</span><br><br>
+                El timing fue clave: entrar bajo el VSC redujo el delta de pit de 22s a 14s, haciendo viable
+                el undercut en un circuito donde normalmente es imposible adelantar en pista.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("<div style='height:1.5rem'></div>", unsafe_allow_html=True)
+
+        # Features
+        _f1, _f2, _f3 = st.columns(3)
+        with _f1:
+            st.markdown("""
+            <div class="lp-features">
+                <div class="lp-feature-icon">📡</div>
+                <div class="lp-feature-title">Telemetría de canal</div>
+                <div class="lp-feature-desc">Velocidad, acelerador, freno y marcha vuelta a vuelta. Filtrá por zona del circuito.</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with _f2:
+            st.markdown("""
+            <div class="lp-features">
+                <div class="lp-feature-icon">🔁</div>
+                <div class="lp-feature-title">Comparación de vueltas</div>
+                <div class="lp-feature-desc">Comparé dos pilotos o dos vueltas del mismo piloto en cualquier sesión.</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with _f3:
+            st.markdown("""
+            <div class="lp-features">
+                <div class="lp-feature-icon">💬</div>
+                <div class="lp-feature-title">Preguntá en lenguaje natural</div>
+                <div class="lp-feature-desc">Sin SQL, sin código. Hacé preguntas en español y recibí análisis narrativo.</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # Botones
+        _b1, _b2, _b3 = st.columns([2, 1, 2])
+        with _b2:
+            if st.button("Ingresar →", type="primary", use_container_width=True):
+                st.session_state.show_login = True
                 st.rerun()
-            except Exception as e:
-                _log.warning("login failed | email=%s error=%s", email, e)
-                st.session_state.auth_error = str(e)
-        if st.session_state.auth_error:
-            st.error(f"❌ {st.session_state.auth_error}")
+        st.markdown(
+            '<div style="text-align:center;margin-top:0.75rem;">'
+            '<a href="https://github.com/luc45hn/f1-analyst-pro" target="_blank" '
+            'style="font-size:0.85rem;color:#666;text-decoration:none;">'
+            '⭐ Ver el repo en GitHub</a></div>',
+            unsafe_allow_html=True,
+        )
+
+        # Footer
+        st.markdown("""
+        <div class="lp-footer">
+            Datos provistos por FastF1 · Análisis con Claude Sonnet · github.com/luc45hn/f1-analyst-pro
+        </div>
+        """, unsafe_allow_html=True)
+
     st.stop()
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
