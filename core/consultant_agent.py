@@ -26,6 +26,71 @@ def _to_records(df):
     return df.drop(columns=[c for c in _OMIT if c in df.columns]).to_dict("records")
 
 
+def _detect_intent(prompt: str, gp_name: str = "") -> dict:
+    """Detecta la intención del prompt y extrae parámetros de contexto.
+
+    Separada de send_message para poder testearse de forma aislada.
+    """
+    prompt_lower = unicodedata.normalize("NFD", prompt.lower()).encode("ascii", "ignore").decode()
+
+    wants_qualy    = any(w in prompt_lower for w in ["clasif", "qualy", "qualifying", "pole", "q1", "q2", "q3", "grid"])
+    wants_race     = any(w in prompt_lower for w in ["carrera", "race", "vuelta", "ritmo", "neumático",
+                                                      "stint", "pit", "parada", "degradación", "top"])
+    wants_sprint   = any(w in prompt_lower for w in ["sprint", "sq", "ss"])
+    wants_practice = any(w in prompt_lower for w in [
+        "entrenamiento", "practica", "fp1", "fp2", "fp3",
+        "practice", "libre", "libres", "evolucion", "setup"
+    ])
+    wants_undercut = any(w in prompt_lower for w in [
+        "undercut", "overcut", "estrategia de pit", "parada",
+        "beneficio", "perjudico", "funciono la parada"
+    ])
+    wants_race_sim = any(w in prompt_lower for w in [
+        'race simulation', 'simulacion de carrera', 'long run',
+        'ritmo en la practica', 'ritmo de fp2', 'simulacro'
+    ])
+    if wants_sprint and "sq" in prompt_lower:
+        wants_qualy = True
+    load_all = not (wants_qualy or wants_race or wants_sprint or wants_practice or wants_undercut or wants_race_sim)
+    wants_telemetry = any(w in prompt_lower for w in [
+        "telemetria", "trace", "acelerador",
+        "freno", "frenar", "clipping", "throttle", "brake",
+        "aceleracion", "aceleraciones", "frenada", "frenadas",
+        "velocidad", "canal", "canales", "grafica", "grafico",
+    ])
+    _qs = re.search(r'\b(q[123])\b', prompt_lower)
+    qualifying_segment = _qs.group(1).upper() if _qs else None
+
+    _AUSTRIA_CURVE_DISTANCES = {9: (3800, 4100)}
+    distance_min: float | None = None
+    distance_max: float | None = None
+    _dist_range = re.search(
+        r'entre\s+(\d{3,5})\s*(?:m|metros)?\s*y\s+(\d{3,5})\s*(?:m|metros)?', prompt_lower
+    )
+    _curve_match = re.search(r'\bcurva\s+(\d{1,2})\b', prompt_lower)
+    if _dist_range:
+        distance_min, distance_max = float(_dist_range.group(1)), float(_dist_range.group(2))
+    elif _curve_match and "austria" in gp_name.lower():
+        _curve_num = int(_curve_match.group(1))
+        if _curve_num in _AUSTRIA_CURVE_DISTANCES:
+            distance_min, distance_max = _AUSTRIA_CURVE_DISTANCES[_curve_num]
+
+    return {
+        "prompt_lower":       prompt_lower,
+        "wants_qualy":        wants_qualy,
+        "wants_race":         wants_race,
+        "wants_sprint":       wants_sprint,
+        "wants_practice":     wants_practice,
+        "wants_undercut":     wants_undercut,
+        "wants_race_sim":     wants_race_sim,
+        "load_all":           load_all,
+        "wants_telemetry":    wants_telemetry,
+        "qualifying_segment": qualifying_segment,
+        "distance_min":       distance_min,
+        "distance_max":       distance_max,
+    }
+
+
 class F1ConsultantAgent:
     def __init__(self):
         self.client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
@@ -41,49 +106,19 @@ class F1ConsultantAgent:
                 }
         except Exception:
             pass
-        prompt_lower = unicodedata.normalize("NFD", prompt.lower()).encode("ascii", "ignore").decode()
-
-        wants_qualy  = any(w in prompt_lower for w in ["clasif", "qualy", "qualifying", "pole", "q1", "q2", "q3", "grid"])
-        wants_race   = any(w in prompt_lower for w in ["carrera", "race", "vuelta", "ritmo", "neumático",
-                                                        "stint", "pit", "parada", "degradación", "top"])
-        wants_sprint = any(w in prompt_lower for w in ["sprint", "sq", "ss"])
-        wants_practice = any(w in prompt_lower for w in [
-            "entrenamiento", "practica", "fp1", "fp2", "fp3",
-            "practice", "libre", "libres", "evolucion", "setup"
-        ])
-        wants_undercut = any(w in prompt_lower for w in [
-            "undercut", "overcut", "estrategia de pit", "parada",
-            "beneficio", "perjudico", "funciono la parada"
-        ])
-        wants_race_sim = any(w in prompt_lower for w in [
-            'race simulation', 'simulacion de carrera', 'long run',
-            'ritmo en la practica', 'ritmo de fp2', 'simulacro'
-        ])
-        if wants_sprint and "sq" in prompt_lower:
-            wants_qualy = True
-        load_all = not (wants_qualy or wants_race or wants_sprint or wants_practice or wants_undercut or wants_race_sim)
-        wants_telemetry = any(w in prompt_lower for w in [
-            "telemetria", "trace", "acelerador",
-            "freno", "frenar", "clipping", "throttle", "brake",
-            "aceleracion", "aceleraciones", "frenada", "frenadas",
-            "velocidad", "canal", "canales", "grafica", "grafico",
-        ])
-        _qs = re.search(r'\b(q[123])\b', prompt_lower)
-        qualifying_segment = _qs.group(1).upper() if _qs else None
-
-        _AUSTRIA_CURVE_DISTANCES = {9: (3800, 4100)}
-        distance_min: float | None = None
-        distance_max: float | None = None
-        _dist_range = re.search(
-            r'entre\s+(\d{3,5})\s*(?:m|metros)?\s*y\s+(\d{3,5})\s*(?:m|metros)?', prompt_lower
-        )
-        _curve_match = re.search(r'\bcurva\s+(\d{1,2})\b', prompt_lower)
-        if _dist_range:
-            distance_min, distance_max = float(_dist_range.group(1)), float(_dist_range.group(2))
-        elif _curve_match and "austria" in gp_name.lower():
-            _curve_num = int(_curve_match.group(1))
-            if _curve_num in _AUSTRIA_CURVE_DISTANCES:
-                distance_min, distance_max = _AUSTRIA_CURVE_DISTANCES[_curve_num]
+        _intent          = _detect_intent(prompt, gp_name)
+        prompt_lower     = _intent["prompt_lower"]
+        wants_qualy      = _intent["wants_qualy"]
+        wants_race       = _intent["wants_race"]
+        wants_sprint     = _intent["wants_sprint"]
+        wants_practice   = _intent["wants_practice"]
+        wants_undercut   = _intent["wants_undercut"]
+        wants_race_sim   = _intent["wants_race_sim"]
+        load_all         = _intent["load_all"]
+        wants_telemetry  = _intent["wants_telemetry"]
+        qualifying_segment = _intent["qualifying_segment"]
+        distance_min     = _intent["distance_min"]
+        distance_max     = _intent["distance_max"]
         logger.debug("telemetry | distance_min=%s distance_max=%s", distance_min, distance_max)
         logger.debug("intent | gp=%s wants_qualy=%s wants_race=%s wants_sprint=%s load_all=%s wants_telemetry=%s qualifying_segment=%s",
                      gp_name, wants_qualy, wants_race, wants_sprint, load_all, wants_telemetry, qualifying_segment)
