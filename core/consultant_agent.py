@@ -408,6 +408,7 @@ class F1ConsultantAgent:
                         None, gp_name, year, _tel_drivers, _stype,
                         qualifying_segment if _stype == "Q" else None,
                         distance_min, distance_max,
+                        db=self.db,
                     )
                     if pre_chart is not None:
                         logger.debug("pre_chart OK | drivers=%s session=%s", _tel_drivers, _stype)

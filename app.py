@@ -846,10 +846,10 @@ with tab_telemetry:
     _tel_avail = [
         code for code, _ in st.session_state.sessions_available
         if st.session_state.sessions_db_status.get(code, False)
-        and code in ("Q", "R", "FP1", "FP2", "FP3")
+        and code in ("Q", "SQ", "R", "SS")
     ]
     drivers_list = []
-    for _pref in ("Q", "R", "FP1", "FP2", "FP3"):
+    for _pref in ("Q", "SQ", "R", "SS"):
         _pref_sid = _cached_session_id(_yr, _gp, _pref)
         if _pref_sid:
             _pref_laps = _cached_laps_data(_pref_sid)
@@ -871,7 +871,7 @@ with tab_telemetry:
     with _sc1:
         sel_session = st.selectbox(
             "Sesión",
-            _tel_avail or ["Q", "R", "FP1", "FP2", "FP3"],
+            _tel_avail or ["Q", "R"],
             key="tel_session",
         )
 
@@ -970,6 +970,7 @@ with tab_telemetry:
             _tel_fig = plot_telemetry_trace(
                 None, _gp, _yr, _tel_drivers_call,
                 sel_session, _qs_call, _dist_min, _dist_max, _lap_nums_call, _explicit_lap_p2, _explicit_lap_p1,
+                db=F1Database(),
             )
         st.session_state.tel_chart   = _tel_fig
         st.session_state.tel_ai_text = None
