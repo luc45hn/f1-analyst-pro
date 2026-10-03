@@ -846,10 +846,10 @@ with tab_telemetry:
     _tel_avail = [
         code for code, _ in st.session_state.sessions_available
         if st.session_state.sessions_db_status.get(code, False)
-        and code in ("Q", "SQ", "R", "SS")
+        and code in ("Q", "SQ", "R", "SS", "FP1", "FP2", "FP3")
     ]
     drivers_list = []
-    for _pref in ("Q", "SQ", "R", "SS"):
+    for _pref in ("Q", "R", "SQ", "SS", "FP1", "FP2", "FP3"):
         _pref_sid = _cached_session_id(_yr, _gp, _pref)
         if _pref_sid:
             _pref_laps = _cached_laps_data(_pref_sid)
@@ -871,7 +871,7 @@ with tab_telemetry:
     with _sc1:
         sel_session = st.selectbox(
             "Sesión",
-            _tel_avail or ["Q", "R"],
+            _tel_avail or ["Q", "R", "FP1", "FP2", "FP3"],
             key="tel_session",
         )
 

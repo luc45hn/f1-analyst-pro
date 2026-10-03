@@ -327,22 +327,7 @@ def plot_telemetry_trace(
 
     for label, lap, color, fill_color in entries:
         try:
-            tel = None
-            if session_type in ("R", "SS") and db is not None:
-                try:
-                    _sid = db.get_session_id(year, gp_name, session_type)
-                    if _sid is not None:
-                        _db_tel = db.get_telemetry(_sid, str(lap["Driver"]), int(lap["LapNumber"]))
-                        if not _db_tel.empty:
-                            tel = _db_tel.rename(columns={
-                                "distance": "Distance", "speed": "Speed",
-                                "throttle": "Throttle", "brake": "Brake", "gear": "nGear",
-                            })
-                            _log.debug("telemetry | DB hit | label=%s points=%d", label, len(tel))
-                except Exception as _e:
-                    _log.debug("telemetry | DB lookup failed, falling back to FastF1 | %s", _e)
-            if tel is None:
-                tel = lap.get_car_data().add_distance()
+            tel = lap.get_car_data().add_distance()
             if distance_min is not None and distance_max is not None:
                 tel = tel[(tel["Distance"] >= distance_min) & (tel["Distance"] <= distance_max)]
             _log.debug("telemetry | car_data OK | label=%s points=%d", label, len(tel))
