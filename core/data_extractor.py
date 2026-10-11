@@ -3,7 +3,7 @@ import fastf1
 import numpy as np
 import pandas as pd
 from core.config import CACHE_DIR
-from core.database_manager import F1Database
+from core.database_manager import F1Database, F1TelemetryDatabase
 from core.logger import get_logger
 
 logger = get_logger(__name__)
@@ -156,6 +156,7 @@ def get_session_data(year, gp_name, session_type="R"):
             try:
                 logger.info("telemetry | block entered | %s", session_type)
                 logger.info("telemetry | car_data keys: %s", list(session.car_data.keys())[:3])
+                tel_db = F1TelemetryDatabase()
                 for driver_number in session.drivers:
                     logger.info("telemetry | processing driver %s", driver_number)
                     driver_laps = session.laps.pick_drivers(driver_number)
@@ -218,8 +219,8 @@ def get_session_data(year, gp_name, session_type="R"):
 
                     if tel_rows:
                         logger.info("telemetry | driver=%s rows_to_insert=%d", _drv_code, len(tel_rows))
-                        db.insert_telemetry(tel_rows)
-                        logger.info("telemetry | driver=%s rows=%d saved | %s %s %s",
+                        tel_db.insert_telemetry(tel_rows)
+                        logger.info("telemetry | driver=%s rows=%d saved → telemetry_db | %s %s %s",
                                     _drv_code, len(tel_rows), year, gp_name, session_type)
             except Exception:
                 logger.exception("Telemetry channel data failed | %s %s %s", year, gp_name, session_type)

@@ -5,7 +5,7 @@ import psycopg2.extras
 import numpy as np
 from sqlalchemy import create_engine, text
 import pandas as pd
-from core.config import SUPABASE_DB_URL
+from core.config import SUPABASE_DB_URL, SUPABASE_TELEMETRY_URL
 from core.logger import get_logger
 
 _log = get_logger(__name__)
@@ -705,6 +705,67 @@ class F1Database:
     def get_telemetry(self, session_id: int, driver: str,
                       lap_number: int | None = None) -> pd.DataFrame:
         """Retorna telemetría de canal desde Supabase."""
+        if lap_number is not None:
+            return pd.read_sql_query(
+                text("SELECT distance, speed, throttle, brake, gear "
+                     "FROM telemetry "
+                     "WHERE session_id = :sid AND driver = :drv AND lap_number = :lap "
+                     "ORDER BY distance ASC"),
+                self._engine,
+                params={"sid": session_id, "drv": driver, "lap": lap_number},
+            )
+        return pd.read_sql_query(
+            text("SELECT lap_number, distance, speed, throttle, brake, gear "
+                 "FROM telemetry "
+                 "WHERE session_id = :sid AND driver = :drv "
+                 "ORDER BY lap_number ASC, distance ASC"),
+            self._engine,
+            params={"sid": session_id, "drv": driver},
+        )
+
+
+class F1TelemetryDatabase:
+    """Conexión dedicada a la DB de telemetría de canal (instancia Supabase separada)."""
+
+    def __init__(self):
+        self._url = SUPABASE_TELEMETRY_URL or SUPABASE_DB_URL
+        self._engine = create_engine(
+            self._url,
+            pool_pre_ping=True,
+            pool_recycle=300,
+            connect_args={"connect_timeout": 10},
+        )
+
+    def _connect(self):
+        return psycopg2.connect(self._url)
+
+    def insert_telemetry(self, rows: list[dict]):
+        """Bulk INSERT con ON CONFLICT DO NOTHING (page_size=1000)."""
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                psycopg2.extras.execute_values(
+                    cur,
+                    """INSERT INTO telemetry
+                           (session_id, driver, lap_number, distance,
+                            speed, throttle, brake, gear)
+                       VALUES %s
+                       ON CONFLICT (session_id, driver, lap_number, distance) DO NOTHING""",
+                    [
+                        (row["session_id"], row["driver"], row["lap_number"],
+                         row["distance"], row.get("speed"), row.get("throttle"),
+                         row.get("brake"), row.get("gear"))
+                        for row in rows
+                    ],
+                    page_size=1000,
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def get_telemetry(self, session_id: int, driver: str,
+                      lap_number: int | None = None) -> pd.DataFrame:
+        """Retorna telemetría de canal desde la DB de telemetría."""
         if lap_number is not None:
             return pd.read_sql_query(
                 text("SELECT distance, speed, throttle, brake, gear "

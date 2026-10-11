@@ -327,7 +327,30 @@ def plot_telemetry_trace(
 
     for label, lap, color, fill_color in entries:
         try:
-            tel = lap.get_car_data().add_distance()
+            tel = None
+            if session_type in ("R", "SS"):
+                try:
+                    from core.database_manager import F1Database as _MainDB, F1TelemetryDatabase
+                    _sid = _MainDB().get_session_id(year, gp_name, session_type)
+                    if _sid is not None:
+                        _db_tel = F1TelemetryDatabase().get_telemetry(
+                            _sid, str(lap["Driver"]), int(lap["LapNumber"])
+                        )
+                        if not _db_tel.empty:
+                            tel = _db_tel.rename(columns={
+                                "distance": "Distance", "speed": "Speed",
+                                "throttle": "Throttle", "brake": "Brake", "gear": "nGear",
+                            })
+                            _log.info("telemetry | source=DB | session=%s driver=%s laps=%d points=%d",
+                                      session_type, lap["Driver"],
+                                      _db_tel["lap_number"].nunique() if "lap_number" in _db_tel.columns else 1,
+                                      len(_db_tel))
+                except Exception as _e:
+                    _log.debug("telemetry | tel_db lookup failed, fallback FastF1 | %s", _e)
+            if tel is None:
+                tel = lap.get_car_data().add_distance()
+                _log.info("telemetry | source=FastF1 | session=%s driver=%s",
+                          session_type, lap["Driver"])
             if distance_min is not None and distance_max is not None:
                 tel = tel[(tel["Distance"] >= distance_min) & (tel["Distance"] <= distance_max)]
             _log.debug("telemetry | car_data OK | label=%s points=%d", label, len(tel))
