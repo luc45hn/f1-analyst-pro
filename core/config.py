@@ -27,7 +27,7 @@ SUPABASE_URL             = os.getenv("SUPABASE_URL", "")
 SUPABASE_PUBLISHABLE_KEY = os.getenv("SUPABASE_PUBLISHABLE_KEY", "")
 SUPABASE_SECRET_KEY      = os.getenv("SUPABASE_SECRET_KEY", "")
 SUPABASE_DB_URL          = os.getenv("SUPABASE_DB_URL", "")
-SUPABASE_TELEMETRY_URL   = os.getenv("SUPABASE_TELEMETRY_URL", "")
+TELEMETRY_DB_URL         = os.getenv("TELEMETRY_DB_URL", "")
 
 # ── GP name aliases (input del usuario → nombre oficial FastF1) ───────────────
 GP_ALIASES: dict[str, str] = {

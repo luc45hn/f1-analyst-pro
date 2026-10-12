@@ -92,6 +92,7 @@ def get_session_data(year, gp_name, session_type="R"):
             logger.info("%d results saved | %s %s %s", len(results_df), year, gp_name, session_type)
         elif session_type == "Q" and results_data:
             qualy_results_df = pd.DataFrame(results_data)
+            qualy_results_df = qualy_results_df.dropna(subset=["Position"])
             qualy_results_df["session_id"] = session_id
             db.insert_qualy_results_data(session_id, qualy_results_df)
             logger.info("%d qualifying results saved | %s %s %s", len(qualy_results_df), year, gp_name, session_type)
@@ -152,7 +153,7 @@ def get_session_data(year, gp_name, session_type="R"):
             except Exception:
                 logger.warning("Race incidents not available | %s %s %s", year, gp_name, session_type)
 
-        if session_type in ("R", "SS"):
+        if session_type in ("R", "SS", "Q", "SQ"):
             try:
                 logger.info("telemetry | block entered | %s", session_type)
                 logger.info("telemetry | car_data keys: %s", list(session.car_data.keys())[:3])

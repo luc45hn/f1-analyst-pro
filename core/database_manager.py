@@ -5,7 +5,7 @@ import psycopg2.extras
 import numpy as np
 from sqlalchemy import create_engine, text
 import pandas as pd
-from core.config import SUPABASE_DB_URL, SUPABASE_TELEMETRY_URL
+from core.config import SUPABASE_DB_URL, TELEMETRY_DB_URL
 from core.logger import get_logger
 
 _log = get_logger(__name__)
@@ -728,7 +728,8 @@ class F1TelemetryDatabase:
     """Conexión dedicada a la DB de telemetría de canal (instancia Supabase separada)."""
 
     def __init__(self):
-        self._url = SUPABASE_TELEMETRY_URL or SUPABASE_DB_URL
+        _raw = TELEMETRY_DB_URL or SUPABASE_DB_URL
+        self._url = _raw.replace("postgres://", "postgresql://", 1)
         self._engine = create_engine(
             self._url,
             pool_pre_ping=True,
