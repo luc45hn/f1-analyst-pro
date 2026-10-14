@@ -784,3 +784,21 @@ class F1TelemetryDatabase:
             self._engine,
             params={"sid": session_id, "drv": driver},
         )
+
+    def has_telemetry_for_sessions(self, session_ids: list[int]) -> bool:
+        """Devuelve True si existe al menos una fila en telemetry para alguno de los session_ids."""
+        if not session_ids:
+            return False
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT 1 FROM telemetry WHERE session_id = ANY(%s) LIMIT 1",
+                    (session_ids,),
+                )
+                return cur.fetchone() is not None
+        except Exception:
+            _log.exception("has_telemetry_for_sessions failed | session_ids=%s", session_ids)
+            return True
+        finally:
+            conn.close()

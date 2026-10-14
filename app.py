@@ -6,7 +6,7 @@ from supabase import create_client
 from core.consultant_agent import F1ConsultantAgent
 from core.chart_builder import plot_telemetry_trace
 from core.export_manager import export_to_docx, export_to_pdf
-from core.database_manager import F1Database
+from core.database_manager import F1Database, F1TelemetryDatabase
 from core.weekend_detector import detect_weekend_type, ensure_sessions_loaded, get_session_display_names, _get_event, _get_sessions
 from core.config import PREDEFINED_ANALYSES, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, APP_VERSION, DAILY_COST_LIMIT_USD
 from core.gp_resolver import parse_gp_input, DEFAULT_YEAR, GPNotFoundError
@@ -23,6 +23,13 @@ def _cached_session_id(year: int, event_name: str, session_type: str):
 @st.cache_data(ttl=300)
 def _cached_laps_data(session_id: int):
     return F1Database().get_laps_data(session_id)
+
+@st.cache_data(ttl=300)
+def _cached_has_telemetry(session_ids: tuple) -> bool:
+    try:
+        return F1TelemetryDatabase().has_telemetry_for_sessions(list(session_ids))
+    except Exception:
+        return True  # no mostrar el banner si Aiven falla
 
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -842,6 +849,19 @@ with tab_telemetry:
     _gp  = st.session_state.gp_loaded
     _yr  = st.session_state.year
 
+    _all_tel_sids = tuple(
+        sid for code in ("Q", "SQ", "R", "SS", "FP1", "FP2", "FP3")
+        if (sid := _cached_session_id(_yr, _gp, code)) is not None
+    )
+    _log.info("tab_telemetry | _all_tel_sids=%s", _all_tel_sids)
+    _log.info("tab_telemetry | has_telemetry=%s", _cached_has_telemetry(_all_tel_sids) if _all_tel_sids else "N/A (no sids)")
+    if _all_tel_sids and not _cached_has_telemetry(_all_tel_sids):
+        _log.info("tab_telemetry | banner SHOWN for gp=%s yr=%s", _gp, _yr)
+        st.info(
+            "Este GP no tiene telemetría precargada. "
+            "Los gráficos se generarán en tiempo real con FastF1 (puede tardar unos segundos)."
+        )
+
     # Drivers list — desde la primera sesión disponible con datos
     _tel_avail = [
         code for code, _ in st.session_state.sessions_available
@@ -966,7 +986,12 @@ with tab_telemetry:
             else ("Q3" if _compare_mode and sel_session == "Q"
                   else ("COMPARE" if _compare_mode else None))
         )
-        with st.spinner("📡 Descargando telemetría de FastF1... (puede tardar ~10s)"):
+        _spinner_msg = (
+            "📡 Cargando sesión..."
+            if (_all_tel_sids and _cached_has_telemetry(_all_tel_sids))
+            else "📡 Descargando telemetría de FastF1... (puede tardar ~10s)"
+        )
+        with st.spinner(_spinner_msg):
             _tel_fig = plot_telemetry_trace(
                 None, _gp, _yr, _tel_drivers_call,
                 sel_session, _qs_call, _dist_min, _dist_max, _lap_nums_call, _explicit_lap_p2, _explicit_lap_p1,
