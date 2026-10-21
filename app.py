@@ -31,6 +31,11 @@ def _cached_has_telemetry(session_ids: tuple) -> bool:
     except Exception:
         return True  # no mostrar el banner si Aiven falla
 
+@st.cache_data(ttl=300)
+def _cached_all_session_ids(year: int, gp: str) -> tuple:
+    rows = F1Database().get_sessions_for_gp(year, gp)
+    return tuple(r["id"] for r in rows if r.get("id"))
+
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -849,14 +854,9 @@ with tab_telemetry:
     _gp  = st.session_state.gp_loaded
     _yr  = st.session_state.year
 
-    _all_tel_sids = tuple(
-        sid for code in ("Q", "SQ", "R", "SS", "FP1", "FP2", "FP3")
-        if (sid := _cached_session_id(_yr, _gp, code)) is not None
-    )
-    _log.info("tab_telemetry | _all_tel_sids=%s", _all_tel_sids)
-    _log.info("tab_telemetry | has_telemetry=%s", _cached_has_telemetry(_all_tel_sids) if _all_tel_sids else "N/A (no sids)")
+    _all_tel_sids = _cached_all_session_ids(_yr, _gp)
+    _log.info("tab_telemetry | sids=%s gp=%s yr=%s", _all_tel_sids, _gp, _yr)
     if _all_tel_sids and not _cached_has_telemetry(_all_tel_sids):
-        _log.info("tab_telemetry | banner SHOWN for gp=%s yr=%s", _gp, _yr)
         st.info(
             "Este GP no tiene telemetría precargada. "
             "Los gráficos se generarán en tiempo real con FastF1 (puede tardar unos segundos)."

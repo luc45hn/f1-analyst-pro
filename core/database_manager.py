@@ -127,6 +127,13 @@ class F1Database:
         finally:
             conn.close()
 
+    def get_sessions_for_gp(self, year: int, gp: str) -> list[dict]:
+        return pd.read_sql_query(
+            text("SELECT id FROM sessions WHERE year = :year AND event_name = :gp"),
+            self._engine,
+            params={"year": year, "gp": gp},
+        ).to_dict("records")
+
     def get_session_id(self, year, event_name, session_type):
         conn = self._connect()
         try:
