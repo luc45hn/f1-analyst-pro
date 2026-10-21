@@ -129,9 +129,15 @@ class F1ConsultantAgent:
         missing_context = ""
         sessions_in_context = []
 
+        # Prefetch todos los session_ids del GP en una sola query por año
+        sids: dict[str, int] = self.db.get_sessions_for_gp(year, gp_name)
+        sids_prev: dict[str, int] = (
+            self.db.get_sessions_for_gp(year - 1, gp_name) if compare_previous_year else {}
+        )
+
         # --- CLASIFICACIÓN ---
         if wants_qualy or load_all:
-            qualy_id = self.db.get_session_id(year, gp_name, "Q")
+            qualy_id = sids.get("Q")
             if qualy_id:
                 sessions_in_context.append("Q")
                 best_q = self.db.get_best_lap_per_driver(qualy_id).to_dict("records")
@@ -145,7 +151,7 @@ class F1ConsultantAgent:
 
         # --- CARRERA ---
         if wants_race or wants_undercut or load_all:
-            race_id = self.db.get_session_id(year, gp_name, "R")
+            race_id = sids.get("R")
             if race_id:
                 sessions_in_context.append("R")
                 results_df = self.db.get_results_data(race_id)
@@ -204,7 +210,7 @@ class F1ConsultantAgent:
 
         # --- SPRINT ---
         if wants_sprint or load_all:
-            ss_id = self.db.get_session_id(year, gp_name, "SS")
+            ss_id = sids.get("SS")
             if ss_id:
                 sessions_in_context.append("SS")
                 ss_results = self.db.get_results_data(ss_id)
@@ -214,7 +220,7 @@ class F1ConsultantAgent:
                 if top_ss:
                     static_context += "--- TOP 10 VUELTAS SPRINT RACE (SS) ---\n" + str(top_ss) + "\n\n"
 
-            sq_id = self.db.get_session_id(year, gp_name, "SQ")
+            sq_id = sids.get("SQ")
             if sq_id:
                 sessions_in_context.append("SQ")
                 top_sq = self.db.get_top_laps(sq_id).to_dict("records")
@@ -229,7 +235,7 @@ class F1ConsultantAgent:
                 ("FP2", "PRÁCTICA 2 (FP2)"),
                 ("FP3", "PRÁCTICA 3 (FP3)"),
             ]:
-                fp_id = self.db.get_session_id(year, gp_name, fp_code)
+                fp_id = sids.get(fp_code)
                 if fp_id:
                     sessions_in_context.append(fp_code)
                     best_fp = self.db.get_best_lap_per_driver(fp_id).to_dict("records")
@@ -250,8 +256,7 @@ class F1ConsultantAgent:
                     )
 
         # --- ALINEACIÓN ---
-        lineup_sid = (self.db.get_session_id(year, gp_name, "R")
-                      or self.db.get_session_id(year, gp_name, "SS"))
+        lineup_sid = sids.get("R") or sids.get("SS")
         if lineup_sid:
             lineups = self.db.get_team_lineups(lineup_sid)
             if lineups:
@@ -263,7 +268,7 @@ class F1ConsultantAgent:
             prev_year = year - 1
             any_prev = False
 
-            q_id_prev = self.db.get_session_id(prev_year, gp_name, "Q")
+            q_id_prev = sids_prev.get("Q")
             if q_id_prev:
                 any_prev = True
                 best_q_prev = self.db.get_best_lap_per_driver(q_id_prev).to_dict("records")
@@ -273,7 +278,7 @@ class F1ConsultantAgent:
                 if qr_prev:
                     comparison_context += f"--- RESULTADOS QUALIFYING {prev_year} — Q1/Q2/Q3 (COMPARACIÓN) ---\n" + str(qr_prev) + "\n\n"
 
-            r_id_prev = self.db.get_session_id(prev_year, gp_name, "R")
+            r_id_prev = sids_prev.get("R")
             if r_id_prev:
                 any_prev = True
                 res_prev = self.db.get_results_data(r_id_prev)
@@ -286,14 +291,14 @@ class F1ConsultantAgent:
                 if stint_prev:
                     comparison_context += f"--- RESUMEN DE RITMO POR STINT CARRERA {prev_year} (COMPARACIÓN) ---\n" + str(stint_prev) + "\n\n"
 
-            ss_id_prev = self.db.get_session_id(prev_year, gp_name, "SS")
+            ss_id_prev = sids_prev.get("SS")
             if ss_id_prev:
                 any_prev = True
                 top_ss_prev = self.db.get_top_laps(ss_id_prev).to_dict("records")
                 if top_ss_prev:
                     comparison_context += f"--- TOP 10 VUELTAS SPRINT RACE {prev_year} (COMPARACIÓN) ---\n" + str(top_ss_prev) + "\n\n"
 
-            sq_id_prev = self.db.get_session_id(prev_year, gp_name, "SQ")
+            sq_id_prev = sids_prev.get("SQ")
             if sq_id_prev:
                 any_prev = True
                 top_sq_prev = self.db.get_top_laps(sq_id_prev).to_dict("records")

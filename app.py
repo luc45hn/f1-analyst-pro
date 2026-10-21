@@ -33,8 +33,11 @@ def _cached_has_telemetry(session_ids: tuple) -> bool:
 
 @st.cache_data(ttl=300)
 def _cached_all_session_ids(year: int, gp: str) -> tuple:
-    rows = F1Database().get_sessions_for_gp(year, gp)
-    return tuple(r["id"] for r in rows if r.get("id"))
+    return tuple(F1Database().get_sessions_for_gp(year, gp).values())
+
+@st.cache_data(ttl=300)
+def _cached_session_map(year: int, gp: str) -> dict:
+    return F1Database().get_sessions_for_gp(year, gp)
 
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -863,6 +866,7 @@ with tab_telemetry:
         )
 
     # Drivers list — desde la primera sesión disponible con datos
+    _sid_map = _cached_session_map(_yr, _gp)
     _tel_avail = [
         code for code, _ in st.session_state.sessions_available
         if st.session_state.sessions_db_status.get(code, False)
@@ -870,7 +874,7 @@ with tab_telemetry:
     ]
     drivers_list = []
     for _pref in ("Q", "R", "SQ", "SS", "FP1", "FP2", "FP3"):
-        _pref_sid = _cached_session_id(_yr, _gp, _pref)
+        _pref_sid = _sid_map.get(_pref)
         if _pref_sid:
             _pref_laps = _cached_laps_data(_pref_sid)
             drivers_list = sorted(_pref_laps["driver"].dropna().unique().tolist())
@@ -898,7 +902,7 @@ with tab_telemetry:
     _compare_mode = drv2 == "— comparar con vuelta anterior —"
 
     # Lap options para el piloto 1 en la sesión seleccionada
-    _sel_sid = _cached_session_id(_yr, _gp, sel_session)
+    _sel_sid = _sid_map.get(sel_session)
     lap_options: list[str] = []
     if _sel_sid and drivers_list and drv1 != "—":
         _d1_laps = _cached_laps_data(_sel_sid)
