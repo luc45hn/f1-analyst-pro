@@ -241,10 +241,18 @@ def plot_telemetry_trace(
         session = fastf1.get_session(year, gp_name, ff1_identifier)
         _log.debug("telemetry | get_session OK → %s", session.name)
         session.load(laps=True, telemetry=True, weather=False, messages=False)
-        _log.debug("telemetry | session.load OK | laps=%d", len(session.laps))
     except Exception as e:
         _log.exception("telemetry | session load failed | %s", e)
         return None
+
+    try:
+        _log.debug("telemetry | session.load OK | laps=%d", len(session.laps))
+    except fastf1.exceptions.DataNotLoadedError:
+        _log.warning("telemetry | DataNotLoadedError | session=%s %s %d", session_type, gp_name, year)
+        return (
+            f"No se pudieron cargar los datos de la sesión **{session_type}** desde FastF1. "
+            "Es posible que la sesión no esté disponible."
+        )
 
     fig = make_subplots(
         rows=4, cols=1, shared_xaxes=True,

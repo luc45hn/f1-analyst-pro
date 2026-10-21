@@ -415,6 +415,8 @@ class F1ConsultantAgent:
                         distance_min, distance_max,
                         db=self.db,
                     )
+                    if isinstance(pre_chart, str):
+                        pre_chart = None
                     if pre_chart is not None:
                         logger.debug("pre_chart OK | drivers=%s session=%s", _tel_drivers, _stype)
                         user_content += (

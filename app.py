@@ -1001,9 +1001,11 @@ with tab_telemetry:
                 sel_session, _qs_call, _dist_min, _dist_max, _lap_nums_call, _explicit_lap_p2, _explicit_lap_p1,
                 db=F1Database(),
             )
-        st.session_state.tel_chart   = _tel_fig
         st.session_state.tel_ai_text = None
-        if _tel_fig is None:
+        if isinstance(_tel_fig, str):
+            st.session_state.tel_chart = None
+            st.session_state.tel_warning_msg = _tel_fig
+        elif _tel_fig is None:
             _warn_drv  = ", ".join(_tel_drivers_call)
             _warn_sess = {"Q": "Qualifying", "R": "Carrera", "FP1": "Practice 1",
                           "FP2": "Practice 2", "FP3": "Practice 3",
@@ -1014,6 +1016,7 @@ with tab_telemetry:
                 "en FP1 puede haber un rookie sustituto por reglamento FIA."
             )
         else:
+            st.session_state.tel_chart = _tel_fig
             st.session_state.tel_warning_msg = None
             # Log generación de gráfico de telemetría (sin costo LLM)
             _tel_drv_label = " vs ".join(_tel_drivers_call)
