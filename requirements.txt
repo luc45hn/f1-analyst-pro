@@ -15,3 +15,4 @@ streamlit-local-storage
 python-docx
 reportlab
 kaleido
+boto3

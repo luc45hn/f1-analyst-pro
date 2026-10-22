@@ -14,7 +14,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.weekend_detector import ensure_sessions_loaded
 from core.database_manager import F1Database, F1TelemetryDatabase
-from core.config import TELEMETRY_DB_URL, SUPABASE_DB_URL
+from core.config import TELEMETRY_DB_URL, SUPABASE_DB_URL, CACHE_DIR
+from core.r2_cache import upload_session_cache
 
 _TELEMETRY_MAX_GB = float(os.getenv("TELEMETRY_MAX_GB", "1"))
 
@@ -81,6 +82,11 @@ def main():
 
     db = F1Database()
     ensure_sessions_loaded(gp_name, db, year)
+
+    for _stype in ("Q", "SQ", "R", "SS", "FP1", "FP2", "FP3"):
+        if db.session_exists(year, gp_name, _stype):
+            _n = upload_session_cache(year, gp_name, _stype, str(CACHE_DIR))
+            print(f"r2 | uploaded {_n} files for {_stype}")
 
     _telemetry_sliding_window()
 

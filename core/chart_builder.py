@@ -235,6 +235,10 @@ def plot_telemetry_trace(
     ff1_identifier = _FF1_SESSION_MAP.get(session_type, session_type)
     _log.debug("telemetry | gp=%s year=%d drivers=%s session_type=%s → ff1=%s",
                gp_name, year, drivers, session_type, ff1_identifier)
+    from core.r2_cache import download_session_cache
+    _r2_hit = download_session_cache(year, gp_name, session_type, str(CACHE_DIR))
+    _log.info("r2 | cache %s | %s %s %d", "HIT" if _r2_hit else "MISS", session_type, gp_name, year)
+
     try:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         fastf1.Cache.enable_cache(str(CACHE_DIR))
