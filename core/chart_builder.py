@@ -280,8 +280,9 @@ def plot_telemetry_trace(
         for idx, lap_number in enumerate(lap_numbers[:2]):
             try:
                 lap_row = drv_laps[drv_laps["LapNumber"] == lap_number].iloc[0]
-                lap_time_s = lap_row["LapTime"].total_seconds()
-                label = f"{drv} — Vuelta {lap_number} ({lap_time_s:.3f}s)"
+                _lt = lap_row["LapTime"]
+                _lt_str = f"{_lt.total_seconds():.3f}s" if pd.notna(_lt) else "s/t"
+                label = f"{drv} — Vuelta {lap_number} ({_lt_str})"
                 entries.append((label, lap_row, _DRIVER_COLORS[idx], _DRIVER_FILL_COLORS[idx]))
             except Exception as e:
                 _log.warning("telemetry | explicit lap=%s not found | %s", lap_number, e)
@@ -303,7 +304,9 @@ def plot_telemetry_trace(
         else:
             top_laps = q3_laps.sort_values("LapTime").head(2)
             for idx, (_, lap) in enumerate(top_laps.iterrows()):
-                label = f"{drv} — Vuelta {int(lap['LapNumber'])} ({lap['LapTime'].total_seconds():.3f}s)"
+                _lt = lap["LapTime"]
+                _lt_str = f"{_lt.total_seconds():.3f}s" if pd.notna(_lt) else "s/t"
+                label = f"{drv} — Vuelta {int(lap['LapNumber'])} ({_lt_str})"
                 entries.append((label, lap, _DRIVER_COLORS[idx], _DRIVER_FILL_COLORS[idx]))
 
     if not compare_laps_mode and not explicit_laps_mode:
@@ -334,7 +337,9 @@ def plot_telemetry_trace(
             except Exception as e:
                 _log.warning("telemetry | driver=%s failed | %s", drv, e)
                 continue
-            label = f"{drv} — Vuelta {int(lap['LapNumber'])} ({lap['LapTime'].total_seconds():.3f}s)"
+            _lt = lap["LapTime"]
+            _lt_str = f"{_lt.total_seconds():.3f}s" if pd.notna(_lt) else "s/t"
+            label = f"{drv} — Vuelta {int(lap['LapNumber'])} ({_lt_str})"
             entries.append((label, lap, color, fill_color))
 
     for label, lap, color, fill_color in entries:
