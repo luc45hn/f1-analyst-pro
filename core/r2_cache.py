@@ -7,14 +7,14 @@ _log = logging.getLogger(__name__)
 
 _BUCKET = "f1-analyst-cache"
 
-_FF1_SESSION_MAP = {
+_FF1_SESSION_NAMES = {
     "R":   "Race",
     "Q":   "Qualifying",
     "SS":  "Sprint",
-    "SQ":  "Sprint Qualifying",
-    "FP1": "Practice 1",
-    "FP2": "Practice 2",
-    "FP3": "Practice 3",
+    "SQ":  "Sprint_Qualifying",
+    "FP1": "Practice_1",
+    "FP2": "Practice_2",
+    "FP3": "Practice_3",
 }
 
 
@@ -35,31 +35,32 @@ def _get_client():
     )
 
 
-def _r2_prefix(year: int, event_name: str, session_type: str) -> str:
-    return f"fastf1-cache/{year}/{event_name}/{session_type}/"
-
-
 def _local_session_dir(year: int, event_name: str, session_type: str, cache_dir: str) -> Path | None:
-    """Encuentra el subdirectorio de FastF1 cache para esta sesión."""
-    cache_path = Path(cache_dir)
-    if not cache_path.exists():
+    """Encuentra el subdirectorio real de FastF1 para esta sesión.
+
+    Estructura: {cache_dir}/{year}/{date}_{EventSlug}/{date}_{SessionName}/
+    """
+    year_dir = Path(cache_dir) / str(year)
+    if not year_dir.exists():
         return None
-    ff1_sess = _FF1_SESSION_MAP.get(session_type, session_type)
-    year_str = str(year)
-    # slug para comparación sin espacios/puntuación: "Miami Grand Prix" → "miamigrandprix"
-    evt_slug = re.sub(r"[^\w]", "", event_name.lower())
-    for d in cache_path.iterdir():
-        if not d.is_dir() or not d.name.startswith(year_str + "_"):
+    ff1_sess = _FF1_SESSION_NAMES.get(session_type, session_type)
+    evt_slug = re.sub(r"[^\w]", "_", event_name).lower()
+    for event_dir in year_dir.iterdir():
+        if not event_dir.is_dir():
             continue
-        if evt_slug in re.sub(r"[^\w]", "", d.name.lower()):
-            session_dir = d / ff1_sess
-            if session_dir.exists():
-                return session_dir
+        if evt_slug in event_dir.name.lower():
+            for session_dir in event_dir.iterdir():
+                if session_dir.is_dir() and session_dir.name.endswith("_" + ff1_sess):
+                    return session_dir
     return None
 
 
 def upload_session_cache(year: int, event_name: str, session_type: str, cache_dir: str) -> int:
-    """Sube los archivos de cache de FastF1 de una sesión a R2. Retorna cantidad subida."""
+    """Sube los archivos de cache de FastF1 de una sesión a R2. Retorna cantidad subida.
+
+    La clave R2 es: fastf1-cache/{path_relativo_desde_cache_dir}
+    Preserva el path exacto para que download reconstruya la estructura correcta.
+    """
     client = _get_client()
     if client is None:
         return 0
@@ -67,13 +68,13 @@ def upload_session_cache(year: int, event_name: str, session_type: str, cache_di
     if session_dir is None:
         _log.warning("r2 | local cache dir not found | %s %s %s", year, event_name, session_type)
         return 0
-    prefix   = _r2_prefix(year, event_name, session_type)
-    uploaded = 0
+    cache_path = Path(cache_dir)
+    uploaded   = 0
     for f in session_dir.rglob("*"):
         if not f.is_file():
             continue
-        rel = f.relative_to(session_dir)
-        key = prefix + str(rel).replace("\\", "/")
+        rel = str(f.relative_to(cache_path)).replace("\\", "/")
+        key = f"fastf1-cache/{rel}"
         try:
             client.upload_file(str(f), _BUCKET, key)
             uploaded += 1
@@ -83,36 +84,38 @@ def upload_session_cache(year: int, event_name: str, session_type: str, cache_di
 
 
 def download_session_cache(year: int, event_name: str, session_type: str, cache_dir: str) -> bool:
-    """Baja los archivos de cache de FastF1 desde R2. Retorna True si encontró archivos."""
+    """Baja los archivos de cache de FastF1 desde R2. Retorna True si encontró archivos.
+
+    Lista objetos bajo fastf1-cache/{year}/ y filtra por event slug + session name.
+    """
     client = _get_client()
     if client is None:
         return False
-    prefix = _r2_prefix(year, event_name, session_type)
+    ff1_sess   = _FF1_SESSION_NAMES.get(session_type, session_type)
+    evt_slug   = re.sub(r"[^\w]", "_", event_name).lower()
+    year_prefix = f"fastf1-cache/{year}/"
     try:
-        resp = client.list_objects_v2(Bucket=_BUCKET, Prefix=prefix)
+        resp = client.list_objects_v2(Bucket=_BUCKET, Prefix=year_prefix)
     except Exception as e:
         _log.warning("r2 | list_objects failed | %s", e)
         return False
-    objects = resp.get("Contents", [])
-    if not objects:
+    objects  = resp.get("Contents", [])
+    matching = [
+        obj for obj in objects
+        if evt_slug in obj["Key"].lower()
+        and f"_{ff1_sess}/" in obj["Key"]
+    ]
+    if not matching:
         return False
-    # Reconstruir bajo el directorio de sesión esperado por FastF1
-    session_dir = _local_session_dir(year, event_name, session_type, cache_dir)
-    if session_dir is None:
-        # Directorio aún no existe localmente — crearlo con estructura esperada
-        ff1_sess    = _FF1_SESSION_MAP.get(session_type, session_type)
-        session_dir = Path(cache_dir) / f"{year}_{event_name}" / ff1_sess
-    session_dir.mkdir(parents=True, exist_ok=True)
+    cache_path = Path(cache_dir)
     downloaded = 0
-    for obj in objects:
-        key = obj["Key"]
-        rel = key[len(prefix):]
-        if not rel:
-            continue
-        local_path = session_dir / rel
-        local_path.parent.mkdir(parents=True, exist_ok=True)
+    for obj in matching:
+        key   = obj["Key"]
+        rel   = key[len("fastf1-cache/"):]
+        local = cache_path / rel
+        local.parent.mkdir(parents=True, exist_ok=True)
         try:
-            client.download_file(_BUCKET, key, str(local_path))
+            client.download_file(_BUCKET, key, str(local))
             downloaded += 1
         except Exception as e:
             _log.warning("r2 | download failed | key=%s | %s", key, e)

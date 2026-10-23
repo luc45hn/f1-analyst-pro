@@ -19,6 +19,27 @@ from core.r2_cache import upload_session_cache
 
 _TELEMETRY_MAX_GB = float(os.getenv("TELEMETRY_MAX_GB", "1"))
 
+_FF1_SESSION_MAP = {
+    "SS": "Sprint",
+    "SQ": "Sprint Qualifying",
+}
+
+
+def _warm_fastf1_cache(year: int, gp_name: str, db: F1Database, cache_dir: str):
+    """Carga cada sesión disponible con FastF1 para poblar el cache local antes de subir a R2."""
+    import fastf1
+    fastf1.Cache.enable_cache(cache_dir)
+    for stype in ("Q", "SQ", "R", "SS", "FP1", "FP2", "FP3"):
+        if not db.session_exists(year, gp_name, stype):
+            continue
+        ff1_id = _FF1_SESSION_MAP.get(stype, stype)
+        try:
+            session = fastf1.get_session(year, gp_name, ff1_id)
+            session.load(laps=True, telemetry=True, weather=False, messages=False)
+            print(f"fastf1 | cache warmed | {stype}")
+        except Exception as e:
+            print(f"fastf1 | cache warm failed | {stype}: {e}")
+
 
 def _telemetry_sliding_window():
     """Verificar storage de la DB de telemetría y borrar el GP más antiguo si supera el 75%."""
@@ -82,6 +103,8 @@ def main():
 
     db = F1Database()
     ensure_sessions_loaded(gp_name, db, year)
+
+    _warm_fastf1_cache(year, gp_name, db, str(CACHE_DIR))
 
     for _stype in ("Q", "SQ", "R", "SS", "FP1", "FP2", "FP3"):
         if db.session_exists(year, gp_name, _stype):
